@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, RefreshCw, Expand, Code2, Download, X, Zap, ArrowRight } from 'lucide-react'
-import { generateDrafts } from '../lib/api.js'
+import { generateDrafts, saveDraftSession } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const ease = [0.22, 1, 0.36, 1]
@@ -28,11 +28,7 @@ export default function QuickDraft({ theme, onToggleTheme }) {
       if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
       setDrafts(d)
       setExpanded(null); setShowCode(null)
-      try {
-        const prev = JSON.parse(localStorage.getItem('draft-history') || '[]')
-        prev.unshift({ id: Date.now().toString(), prompt: p, generatedAt: new Date().toISOString(), drafts: d })
-        localStorage.setItem('draft-history', JSON.stringify(prev.slice(0, 20)))
-      } catch (_) {}
+      try { await saveDraftSession(p, d) } catch (_) {}
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
