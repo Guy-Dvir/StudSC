@@ -38,14 +38,29 @@ router.post('/generate', async (req, res) => {
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' })
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-preview-05-20',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'ARRAY',
+          items: {
+            type: 'OBJECT',
+            properties: {
+              style: { type: 'STRING' },
+              palette: { type: 'STRING' },
+              mood: { type: 'STRING' },
+              html: { type: 'STRING' },
+            },
+            required: ['style', 'palette', 'mood', 'html'],
+          },
+        },
+      },
+    })
 
     const result = await model.generateContent(DRAFT_PROMPT(prompt))
     const text = result.response.text()
-
-    // Strip markdown fences if present
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const drafts = JSON.parse(cleaned)
+    const drafts = JSON.parse(text)
 
     res.json({ drafts })
   } catch (err) {

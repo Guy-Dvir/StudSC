@@ -133,7 +133,7 @@ router.get('/:id/generate', async (req, res) => {
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-preview-05-20' })
 
     for (const section of SECTIONS) {
       send('section_start', { id: section.id })
@@ -182,13 +182,32 @@ router.post('/:id/chat', async (req, res) => {
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' })
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash-preview-05-20',
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: 'OBJECT',
+          properties: {
+            message: { type: 'STRING' },
+            updates: {
+              type: 'OBJECT',
+              properties: {
+                'goals-brief': { type: 'STRING' },
+                'brand-theme': { type: 'STRING' },
+                'sitemap-structure': { type: 'STRING' },
+              },
+            },
+          },
+          required: ['message'],
+        },
+      },
+    })
 
     const currentPlan = SECTIONS.map(s =>
       `### ${s.label}\n${sections[s.id] || '(empty)'}`
     ).join('\n\n')
 
-    // Include pending user message in context without saving it yet
     const contextHistory = [...history, { role: 'user', content: message }]
 
     const contextPrompt = `${SYSTEM_PROMPT}
@@ -201,14 +220,11 @@ ${currentPlan}
 Conversation so far:
 ${contextHistory.slice(-10).map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')}
 
-User's latest message: "${message}"
-
-Respond with JSON only.`
+User's latest message: "${message}"`
 
     const result = await model.generateContent(contextPrompt)
     const text = result.response.text()
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const parsed = JSON.parse(cleaned)
+    const parsed = JSON.parse(text)
 
     // Save updates to .md files
     if (parsed.updates) {

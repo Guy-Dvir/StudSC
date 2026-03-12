@@ -805,7 +805,7 @@ export default function PlanMode({ theme, onToggleTheme }) {
             <textarea
               ref={inputRef}
               value={input}
-              placeholder={generatingPlan ? 'Generating plan…' : 'Refine a section…'}
+              placeholder={generatingPlan ? 'Working on the plan…' : 'Refine or revise the plan'}
               rows={2}
               disabled={sending || generatingPlan}
               style={{ ...s.chatTA, position: 'relative', zIndex: 1, caretColor: chatFocused ? 'transparent' : undefined }}
