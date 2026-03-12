@@ -1,15 +1,17 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RefreshCw, Expand, Code2, Download, X, Zap, ArrowRight } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Expand, ChevronLeft, X, Zap, ArrowRight } from 'lucide-react'
 import { streamDrafts, getDraftSession } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
+import { useIsMobile } from '../lib/useIsMobile.js'
 
 const ease = [0.22, 1, 0.36, 1]
 
 export default function QuickDraft({ theme, onToggleTheme }) {
   const { state }  = useLocation()
   const navigate   = useNavigate()
+  const mobile     = useIsMobile()
   const [drafts,   setDrafts]   = useState(state?.drafts || [])
   const [prompt,   setPrompt]   = useState(state?.prompt || '')
   const [genPrompt, setGenPrompt] = useState(state?.generatePrompt || state?.prompt || '')
@@ -18,7 +20,36 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const [error,    setError]    = useState('')
   const [expanded, setExpanded] = useState(null)
   const [showCode, setShowCode] = useState(null)
+  const [currentSlide, setCurrentSlide] = useState(0)
+  const [swipeHintDismissed, setSwipeHintDismissed] = useState(false)
+  const [slideWidth, setSlideWidth] = useState(0)
   const cleanupRef = useRef(null)
+  const carouselRef = useRef(null)
+
+  const measureCarousel = useCallback((el) => {
+    carouselRef.current = el
+    if (el && mobile) {
+      const w = el.offsetWidth
+      if (w > 0) setSlideWidth(w)
+    }
+  }, [mobile])
+
+  useEffect(() => {
+    if (!mobile) return
+    const updateWidth = () => {
+      if (carouselRef.current) {
+        const w = carouselRef.current.offsetWidth
+        if (w > 0) setSlideWidth(w)
+      }
+    }
+    const t = setTimeout(updateWidth, 100)
+    let ro = null
+    if (carouselRef.current) {
+      ro = new ResizeObserver(updateWidth)
+      ro.observe(carouselRef.current)
+    }
+    return () => { clearTimeout(t); ro?.disconnect() }
+  }, [mobile, drafts.length, loading, slideWidth])
 
   useEffect(() => {
     if (state?.resumeSessionId) {
@@ -28,6 +59,12 @@ export default function QuickDraft({ theme, onToggleTheme }) {
     }
     return () => cleanupRef.current?.()
   }, [])
+
+  useEffect(() => {
+    if (!mobile || swipeHintDismissed) return
+    const t = setTimeout(() => setSwipeHintDismissed(true), 2000)
+    return () => clearTimeout(t)
+  }, [mobile, swipeHintDismissed])
 
   function resumeSession(sessionId) {
     setLoading(true)
@@ -100,71 +137,187 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   return (
     <div style={s.root}>
       {/* Top bar */}
-      <div style={s.topBar}>
+      <div style={{ ...s.topBar, ...(mobile ? { flexWrap: 'wrap', padding: '10px 12px', gap: 8 } : {}) }}>
         <button className="btn btn-ghost btn-sm" onClick={() => navigate('/')}>
           <ArrowLeft size={13} /> Home
         </button>
-        <div style={s.promptChip}>
-          <span style={s.chipText}>{prompt}</span>
-          <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading} style={{ flexShrink: 0 }}>
-            <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
-              <RefreshCw size={12} />
-            </motion.span>
-            {loading ? 'Regenerating…' : 'Regenerate'}
-          </button>
+        {!mobile && (
+          <div style={s.promptChip}>
+            <span style={s.chipText}>{prompt}</span>
+            <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading} style={{ flexShrink: 0 }}>
+              <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
+                <RefreshCw size={12} />
+              </motion.span>
+              {loading ? 'Regenerating…' : 'Regenerate'}
+            </button>
+          </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: mobile ? 'auto' : 0 }}>
+          {mobile && (
+            <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading}>
+              <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
+                <RefreshCw size={12} />
+              </motion.span>
+            </button>
+          )}
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
-        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        {mobile && (
+          <div style={{ width: '100%', fontSize: 12, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {prompt}
+          </div>
+        )}
       </div>
 
       {error && (
         <div style={s.errorBar}>{error} <button onClick={() => setError('')}><X size={13} /></button></div>
       )}
 
-      {/* Grid */}
-      <div style={s.body}>
+      {/* Grid (desktop) / Carousel (mobile) */}
+      <div style={{ ...s.body, ...(mobile ? { padding: '16px 12px', position: 'relative' } : {}) }}>
         {(drafts.length > 0 || loading) && (
-          <div style={s.gridTitle}>Homepage Drafts</div>
+          <div style={{ ...s.gridTitle, ...(mobile ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : {}) }}>
+            <span>Homepage Drafts</span>
+            {mobile && (drafts.length > 0 || loading) && (
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', fontFamily: 'var(--font-ui)' }}>
+                {currentSlide + 1} / 3
+              </span>
+            )}
+          </div>
         )}
-        <div style={s.grid}>
-          {[0, 1, 2].map(i => (
-            <AnimatePresence key={i} mode="wait">
-              {loadingSlots[i] ? (
-                <motion.div key={`sk-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                  <DraftSkeleton index={i} />
-                </motion.div>
-              ) : drafts[i] ? (
-                <motion.div key={`card-${i}`}
-                  initial={{ opacity: 0, y: 40, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease } }}
+        {mobile ? (
+          <>
+            <AnimatePresence>
+              {!swipeHintDismissed && (drafts.length > 0 || loading) && (
+                <motion.div
+                  key="swipe-hint"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25 }}
+                  style={s.swipeHint}
                 >
-                  <DraftCard
-                    draft={drafts[i]} index={i}
-                    onExpand={() => setExpanded(i)}
-                    onDownload={() => download(drafts[i])}
-                    onGenerateSite={() => download(drafts[i])}
-                    onGoToEditor={() => setShowCode(i)}
-                  />
+                  <ChevronLeft size={14} style={{ transform: 'translateX(2px)' }} />
+                  <span>Swipe to see more</span>
                 </motion.div>
-              ) : null}
+              )}
             </AnimatePresence>
-          ))}
-        </div>
+            <div ref={measureCarousel} style={s.carouselTrackWrap}>
+              <motion.div
+                style={{
+                  ...s.carouselTrack,
+                  width: slideWidth > 0 ? slideWidth * 3 : '300%',
+                }}
+                drag={mobile ? 'x' : false}
+                dragConstraints={slideWidth > 0 ? { left: -2 * slideWidth, right: 0 } : false}
+                dragElastic={0.1}
+                dragMomentum={false}
+                onDragEnd={(_, info) => {
+                  setSwipeHintDismissed(true)
+                  if (slideWidth <= 0) return
+                  const offset = -info.offset.x
+                  const raw = offset / slideWidth
+                  const velocity = info.velocity.x
+                  let next
+                  if (Math.abs(velocity) > 300) {
+                    next = velocity > 0 ? Math.max(0, Math.floor(raw) - 1) : Math.min(2, Math.ceil(raw) + 1)
+                  } else {
+                    next = Math.round(raw)
+                  }
+                  setCurrentSlide(Math.max(0, Math.min(2, next)))
+                }}
+                animate={{ x: slideWidth > 0 ? -currentSlide * slideWidth : `-${currentSlide * (100 / 3)}%` }}
+                transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+              >
+                {[0, 1, 2].map(i => (
+                  <div key={i} style={{ ...s.carouselSlide, width: slideWidth > 0 ? slideWidth : undefined, flex: slideWidth > 0 ? 'none' : '0 0 33.333%' }}>
+                    {loadingSlots[i] ? (
+                      <DraftSkeleton index={i} />
+                    ) : drafts[i] ? (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4, ease }}
+                      >
+                        <DraftCard
+                          draft={drafts[i]}
+                          index={i}
+                          onExpand={() => setExpanded(i)}
+                          onDownload={() => download(drafts[i])}
+                          onGenerateSite={() => download(drafts[i])}
+                          onGoToEditor={() => setShowCode(i)}
+                          mobile={mobile}
+                        />
+                      </motion.div>
+                    ) : (
+                      <div style={{ minHeight: 320, background: 'var(--bg-raised)', borderRadius: 'var(--r-xl)' }} />
+                    )}
+                  </div>
+                ))}
+              </motion.div>
+            </div>
+            {(drafts.length > 0 || loading) && (
+              <div style={s.carouselDots}>
+                {[0, 1, 2].map(i => {
+                  const accent = ['#5A84A6', '#7EB8A4', '#A09BCC'][i]
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => { setCurrentSlide(i); setSwipeHintDismissed(true) }}
+                      style={{
+                        ...s.carouselDot,
+                        background: currentSlide === i ? accent : 'var(--border-mid)',
+                        width: currentSlide === i ? 20 : 8,
+                      }}
+                      aria-label={`Draft ${i + 1} of 3`}
+                    />
+                  )
+                })}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={s.grid}>
+            {[0, 1, 2].map(i => (
+              <AnimatePresence key={i} mode="wait">
+                {loadingSlots[i] ? (
+                  <motion.div key={`sk-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <DraftSkeleton index={i} />
+                  </motion.div>
+                ) : drafts[i] ? (
+                  <motion.div key={`card-${i}`}
+                    initial={{ opacity: 0, y: 40, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease } }}
+                  >
+                    <DraftCard
+                      draft={drafts[i]} index={i}
+                      onExpand={() => setExpanded(i)}
+                      onDownload={() => download(drafts[i])}
+                      onGenerateSite={() => download(drafts[i])}
+                      onGoToEditor={() => setShowCode(i)}
+                    />
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Expand modal */}
       <AnimatePresence>
         {expanded !== null && (
           <Overlay onClose={() => setExpanded(null)}>
-            <ModalShell maxWidth={1140}>
-              <div style={s.modalBar}>
+            <ModalShell maxWidth={1140} mobile={mobile}>
+              <div style={{ ...s.modalBar, ...(mobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '12px 14px' } : {}) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <span style={s.modalNum}>#{expanded + 1}</span>
                   <strong style={s.modalTitle}>{drafts[expanded]?.style}</strong>
-                  <span style={s.modalSub}>{drafts[expanded]?.palette}</span>
+                  {!mobile && <span style={s.modalSub}>{drafts[expanded]?.palette}</span>}
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', ...(mobile ? { width: '100%', justifyContent: 'space-between' } : {}) }}>
                   <button className="btn btn-ghost btn-sm" onClick={() => setShowCode(expanded)}>
-                    <ArrowRight size={13} /> Go to Editor
+                    <ArrowRight size={13} /> Editor
                   </button>
                   <button className="btn btn-primary btn-sm" onClick={() => download(drafts[expanded])}>
                     <Zap size={13} /> Generate Full Site
@@ -298,7 +451,7 @@ const ACCENTS = [
   { color: '#A09BCC', glow: 'rgba(160,155,204,0.25)' },
 ]
 
-function DraftCard({ draft, index, onExpand, onGenerateSite, onGoToEditor }) {
+function DraftCard({ draft, index, onExpand, onGenerateSite, onGoToEditor, mobile }) {
   const [hov, setHov] = useState(false)
   const ac = ACCENTS[index % 3]
 
@@ -312,16 +465,19 @@ function DraftCard({ draft, index, onExpand, onGenerateSite, onGoToEditor }) {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
     >
-      <div style={s.cardHead}>
+      <div style={{ ...s.cardHead, ...(mobile ? { flexDirection: 'column', alignItems: 'stretch', gap: 10 } : {}) }}>
         <div style={s.cardMeta}>
           <span style={{ ...s.cardNum, color: ac.color }}>0{index + 1}</span>
           <div style={s.cardStyle}>{draft.style}</div>
         </div>
-        <div style={s.cardActions}>
-          <button className="btn btn-ghost" onClick={onGoToEditor} style={s.cardBtn}>
+        {mobile && draft.mood && (
+          <div style={{ fontSize: 11.5, color: 'var(--text-2)', fontFamily: 'var(--font-ui)', lineHeight: 1.4 }}>{draft.mood}</div>
+        )}
+        <div style={{ ...s.cardActions, ...(mobile ? { width: '100%', justifyContent: 'stretch' } : {}) }}>
+          <button className="btn btn-ghost" onClick={onGoToEditor} style={{ ...s.cardBtn, ...(mobile ? { flex: 1 } : {}) }}>
             <ArrowRight size={10} /> Go to Editor
           </button>
-          <button className="btn btn-primary" onClick={onGenerateSite} style={s.cardBtn}>
+          <button className="btn btn-primary" onClick={onGenerateSite} style={{ ...s.cardBtn, ...(mobile ? { flex: 1 } : {}) }}>
             <Zap size={10} /> Generate Full Site
           </button>
         </div>
@@ -357,10 +513,10 @@ function Overlay({ children, onClose }) {
   )
 }
 
-function ModalShell({ children, maxWidth }) {
+function ModalShell({ children, maxWidth, mobile }) {
   return (
     <motion.div
-      style={{ ...s.modal, maxWidth }}
+      style={{ ...s.modal, maxWidth, ...(mobile ? { maxWidth: '100%', height: '100%', borderRadius: 0 } : {}) }}
       initial={{ scale: 0.95, y: 28 }}
       animate={{ scale: 1, y: 0 }}
       exit={{ scale: 0.95, y: 28 }}
@@ -400,6 +556,19 @@ const s = {
   body: { flex: 1, padding: '32px 28px' },
   gridTitle: { fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'var(--font-ui)', marginBottom: 16 },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22 },
+
+  carouselTrackWrap: { overflow: 'hidden', width: '100%', touchAction: 'pan-y pinch-zoom' },
+  carouselTrack: { display: 'flex', cursor: 'grab', width: '300%' },
+  carouselSlide: { flex: '0 0 33.333%', minWidth: 0, padding: '12px 10px', boxSizing: 'border-box' },
+  carouselDots: { display: 'flex', justifyContent: 'center', gap: 8, marginTop: 16 },
+  carouselDot: { height: 8, borderRadius: 4, border: 'none', cursor: 'pointer', padding: 0, transition: 'width 0.25s ease, background 0.2s' },
+  swipeHint: {
+    position: 'absolute', top: 44, left: '50%', transform: 'translateX(-50%)',
+    display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    borderRadius: 100, fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-ui)',
+    zIndex: 5, pointerEvents: 'none', whiteSpace: 'nowrap',
+  },
   card: {
     background: 'var(--bg-card)',
     border: '1px solid',
@@ -418,7 +587,7 @@ const s = {
   cardActions: { display: 'flex', gap: 5, flexShrink: 0, alignItems: 'center' },
   cardBtn: { fontSize: 10, padding: '6px 8px', gap: 4, lineHeight: 1 },
 
-  preview: { position: 'relative', cursor: 'pointer', borderTop: '1px solid var(--border)', height: '65vh', overflow: 'hidden' },
+  preview: { position: 'relative', cursor: 'pointer', borderTop: '1px solid var(--border)', height: 'clamp(250px, 60vh, 75vh)', overflow: 'hidden' },
   iframe: { width: '200%', height: '200%', border: 'none', transform: 'scale(0.5)', transformOrigin: 'top left', pointerEvents: 'none', background: '#fff' },
   previewOverlay: {
     position: 'absolute', inset: 0,
@@ -432,7 +601,7 @@ const s = {
     color: 'var(--text)', padding: '9px 18px', borderRadius: 100, fontSize: 13, fontWeight: 500,
   },
 
-  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, zIndex: 100 },
+  overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'min(24px, 2vw)', zIndex: 100 },
   modal: {
     background: 'var(--bg-elevated)',
     backdropFilter: 'blur(20px)',

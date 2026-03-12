@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { Zap, Map, ArrowRight, Paperclip, X } from 'lucide-react'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 import { listPlans, listDraftSessions, getDraftSession, createPlan } from '../lib/api.js'
+import { useIsMobile } from '../lib/useIsMobile.js'
 
 const ease = [0.22, 1, 0.36, 1]
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } }
@@ -12,6 +13,7 @@ const up = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition
 export default function Home({ theme, onToggleTheme }) {
   const navigate  = useNavigate()
   const location  = useLocation()
+  const mobile    = useIsMobile()
   const [prompt,  setPrompt]  = useState('')
   const [recentPlans,  setRecentPlans]  = useState([])
   const [draftHistory, setDraftHistory] = useState([])
@@ -188,8 +190,12 @@ export default function Home({ theme, onToggleTheme }) {
             ref={taRef}
             value={prompt}
             placeholder="Describe the business, project or idea — e.g. A luxury spa in Miami targeting busy professionals who crave weekend escapes…"
-            rows={4}
-            style={{ ...s.promptTA, position: 'relative', zIndex: 1, caretColor: taFocused ? 'transparent' : undefined }}
+            rows={mobile ? 3 : 4}
+            style={{
+              ...s.promptTA,
+              ...(mobile ? { minHeight: 80 } : {}),
+              position: 'relative', zIndex: 1, caretColor: taFocused ? 'transparent' : undefined,
+            }}
             onFocus={() => { setTaFocused(true); updateGlow(); startBlink() }}
             onBlur={() => { setTaFocused(false); stopBlink(); setCaretVisible(true) }}
             onKeyUp={updateGlow}
@@ -202,8 +208,11 @@ export default function Home({ theme, onToggleTheme }) {
               startBlink()
             }}
           />
-          <div style={s.promptFooter}>
-            <div style={s.attachArea}>
+          <div style={{
+            ...s.promptFooter,
+            ...(mobile ? { flexDirection: 'column', alignItems: 'stretch', gap: 0, padding: '12px 14px 14px' } : {}),
+          }}>
+            <div style={{ ...s.attachArea, ...(mobile ? s.attachAreaMobile : {}) }}>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -219,8 +228,13 @@ export default function Home({ theme, onToggleTheme }) {
                   e.target.value = ''
                 }}
               />
-              <button style={s.attachBtn} onClick={() => fileInputRef.current?.click()} title="Attach files">
-                <Paperclip size={14} strokeWidth={2} />
+              <button
+                style={mobile ? s.attachAddFilesMobile : s.attachBtn}
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files"
+              >
+                <Paperclip size={mobile ? 12 : 14} strokeWidth={2} />
+                {mobile && <span>Add files</span>}
               </button>
               {attachments.map(f => (
                 <span key={f.name} style={s.attachChip}>
@@ -231,7 +245,10 @@ export default function Home({ theme, onToggleTheme }) {
                 </span>
               ))}
             </div>
-            <div style={s.ctaRow}>
+            <div style={{
+              ...s.ctaRow,
+              ...(mobile ? { flexDirection: 'column', width: '100%', gap: 10 } : {}),
+            }}>
               <ActionBtn
                 icon={Zap}
                 label="Quick Draft"
@@ -240,6 +257,7 @@ export default function Home({ theme, onToggleTheme }) {
                 accentDim="var(--amber-dim)"
                 accentBorder="var(--amber-border)"
                 onClick={handleDraft}
+                fullWidth={mobile}
               />
               <ActionBtn
                 icon={Map}
@@ -249,6 +267,7 @@ export default function Home({ theme, onToggleTheme }) {
                 accentDim="rgba(140,135,190,0.10)"
                 accentBorder="rgba(140,135,190,0.30)"
                 onClick={handlePlan}
+                fullWidth={mobile}
               />
             </div>
           </div>
@@ -304,7 +323,7 @@ export default function Home({ theme, onToggleTheme }) {
 }
 
 /* ── ActionBtn ────────────────────────────────────────────────── */
-function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder, onClick }) {
+function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder, onClick, fullWidth }) {
   const [hov, setHov] = useState(false)
   const lit = hov && active
 
@@ -312,6 +331,7 @@ function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder,
     <motion.button
       style={{
         ...s.actionBtn,
+        ...(fullWidth ? { width: '100%', justifyContent: 'center', padding: '12px 20px' } : {}),
         background: lit ? accentDim : 'var(--bg-raised)',
         borderColor: lit ? accentBorder : 'var(--border)',
         boxShadow: lit ? `0 0 18px ${accentDim}, 0 0 6px ${accentDim}` : 'none',
@@ -420,7 +440,7 @@ const s = {
   root: {
     minHeight: '100vh',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: '0 32px 64px',
+    padding: '0 max(16px, env(safe-area-inset-left)) 64px',
     position: 'relative', overflow: 'hidden',
   },
   orbRoot: { position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' },
@@ -437,8 +457,8 @@ const s = {
 
   center: {
     width: '100%', maxWidth: 760,
-    paddingTop: 72,
-    display: 'flex', flexDirection: 'column', gap: 32,
+    paddingTop: 'clamp(32px, 8vw, 72px)',
+    display: 'flex', flexDirection: 'column', gap: 24,
     position: 'relative', zIndex: 1, flex: 1,
   },
   headline: {
@@ -478,7 +498,9 @@ const s = {
     gap: 12,
   },
   attachArea: { display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, flexWrap: 'wrap' },
+  attachAreaMobile: { fontSize: 12, color: 'var(--text-3)', marginBottom: 4 },
   attachBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', flexShrink: 0, transition: 'color 0.15s, border-color 0.15s' },
+  attachAddFilesMobile: { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 12, fontFamily: 'var(--font-ui)', flexShrink: 0, transition: 'color 0.15s, border-color 0.15s' },
   attachChip: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px 2px 8px', borderRadius: 100, background: 'var(--bg-elevated)', border: '1px solid var(--border)', fontSize: 11, color: 'var(--text-2)', maxWidth: 160 },
   attachChipName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-ui)' },
   attachChipRemove: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, flexShrink: 0 },

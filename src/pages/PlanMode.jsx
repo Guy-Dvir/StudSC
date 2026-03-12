@@ -4,11 +4,12 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowLeft, Send, Paperclip, Zap, X, Download,
   FileText, Target, Map,
-  CheckCircle2, Circle, Save, MessageSquare, ChevronRight, Upload,
-  Image, FileType2, Film, Pencil,
+  CheckCircle2, Circle, Save, MessageSquare, ChevronRight, ChevronDown, Upload,
+  Image, ImagePlus, FileType2, Film, Pencil,
 } from 'lucide-react'
 import { getPlan, sendChat, uploadFile, saveSection } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
+import { useIsMobile } from '../lib/useIsMobile.js'
 
 const SECTIONS = [
   { id: 'goals-brief',       label: 'goals-brief.md',       display: 'Goals & Brief',       icon: Target   },
@@ -218,6 +219,9 @@ export default function PlanMode({ theme, onToggleTheme }) {
   const navigate  = useNavigate()
   const { state } = useLocation()
 
+  const mobile = useIsMobile()
+  const [mobileTab, setMobileTab] = useState('chat')
+  const [showAssetsPanel, setShowAssetsPanel] = useState(false)
   const [plan,           setPlan]          = useState(null)
   const [activeFile,     setActiveFile]    = useState(SECTIONS[0].id)
   const [editContent,    setEditContent]   = useState('')
@@ -531,7 +535,7 @@ export default function PlanMode({ theme, onToggleTheme }) {
     <div style={s.root}>
 
       {/* ── Top bar ── */}
-      <div style={s.topBar}>
+      <div style={{ ...s.topBar, ...(mobile ? { padding: '0 10px', height: 44, gap: 6 } : {}) }}>
         <div style={s.topLeft}>
           <button className="btn btn-ghost btn-sm" onClick={() => navigate('/')} style={{ padding: '5px 10px' }}>
             <ArrowLeft size={13} />
@@ -554,13 +558,15 @@ export default function PlanMode({ theme, onToggleTheme }) {
             ) : (
               <>
                 <span style={s.projName}>{plan.name}</span>
-                <button
-                  onClick={startRename}
-                  style={{ ...s.renameBtn, opacity: hoverPlanName ? 1 : 0 }}
-                  title="Rename"
-                >
-                  <Pencil size={11} />
-                </button>
+                {!mobile && (
+                  <button
+                    onClick={startRename}
+                    style={{ ...s.renameBtn, opacity: hoverPlanName ? 1 : 0 }}
+                    title="Rename"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -573,44 +579,67 @@ export default function PlanMode({ theme, onToggleTheme }) {
                 style={{ display: 'block', width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)' }}
                 animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 1, repeat: Infinity }}
               />
-              Generating…
+              {!mobile && 'Generating…'}
             </motion.span>
           )}
         </div>
 
         <div style={s.topRight}>
-          {error && (
+          {error && !mobile && (
             <span style={s.errBadge}>
               {error}
               <button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex', alignItems: 'center' }}><X size={11} /></button>
             </span>
           )}
           {filled.length > 0 && (
-            <button className="btn btn-ghost" onClick={downloadAll} style={{ gap: 6 }}>
+            <button className={mobile ? 'btn btn-ghost btn-sm' : 'btn btn-ghost'} onClick={downloadAll} style={{ gap: 6 }}>
               <Download size={13} />
-              Export Plan
+              {mobile ? 'Export' : 'Export Plan'}
             </button>
           )}
           <motion.button
-            className="btn btn-primary"
+            className={mobile ? 'btn btn-primary btn-sm' : 'btn btn-primary'}
             onClick={handleGenerate}
             disabled={generating || generatingPlan || filled.length === 0}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.97 }}
           >
             {generating ? <Spinner /> : <Zap size={14} />}
-            {generating ? 'Generating…' : 'Generate Homepage'}
-            {!generating && <ChevronRight size={13} />}
+            <span>{generating ? 'Generating…' : mobile ? 'Generate' : 'Generate Homepage'}</span>
+            {!mobile && !generating && <ChevronRight size={13} />}
           </motion.button>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </div>
 
+      {/* ── Mobile tab bar ── */}
+      {mobile && (
+        <div style={s.mobileTabBar}>
+          {[
+            { id: 'chat', label: 'Chat', Icon: MessageSquare },
+            { id: 'plan', label: 'Plan', Icon: Map },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setMobileTab(tab.id)}
+              style={{
+                ...s.mobileTab,
+                color: mobileTab === tab.id ? 'var(--amber)' : 'var(--text-3)',
+                borderBottomColor: mobileTab === tab.id ? 'var(--amber)' : 'transparent',
+              }}
+            >
+              <tab.Icon size={14} />
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Main panels ── */}
-      <div style={s.panels}>
+      <div style={{ ...s.panels, ...(mobile ? { flexDirection: 'column' } : {}) }}>
 
         {/* Chat panel — LEFT */}
-        <div style={s.chatPanel}>
+        <div style={{ ...s.chatPanel, ...(mobile ? { display: mobileTab === 'chat' ? 'flex' : 'none', maxWidth: 'none' } : {}) }}>
           <div style={s.panelHead}>
             {generatingPlan
               ? <span style={{ ...s.panelLabel, color: 'var(--amber)' }}>Generating</span>
@@ -639,7 +668,7 @@ export default function PlanMode({ theme, onToggleTheme }) {
           {generatingPlan ? (
             <div style={s.genLog}>
               {/* Step rows */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px' }}>
                 <AnimatePresence initial={false}>
                   {genLines.map((line, i) => {
                     const isDone = line.type === 'complete' || line.type === 'done'
@@ -825,10 +854,92 @@ export default function PlanMode({ theme, onToggleTheme }) {
           </motion.div>
         </div>
 
-        <div style={s.divider} />
+        {!mobile && <div style={s.divider} />}
 
-        {/* File Explorer */}
-        <div style={s.explorer}>
+        {/* Mobile: combined Plan tab (file pills + editor + assets toggle) */}
+        {mobile && mobileTab === 'plan' && (
+          <div style={s.mobilePlanPanel}>
+            <div style={s.mobileFilePillBar}>
+              <div style={s.mobileFilePillScroll}>
+                {SECTIONS.map((sec) => {
+                  const Icon = sec.icon
+                  const isDone = plan.sections?.[sec.id]?.trim().length > 0
+                  const isActive = activeFile === sec.id
+                  const genStatus = sectionStatus[sec.id]
+                  const iconColor = genStatus === 'writing' || isActive ? 'var(--amber)' : isDone ? 'var(--amber)' : 'var(--text-3)'
+                  return (
+                    <button
+                      key={sec.id}
+                      onClick={() => openFile(sec.id)}
+                      style={{
+                        ...s.mobileFilePill,
+                        ...(isActive ? s.mobileFilePillActive : {}),
+                      }}
+                    >
+                      <Icon size={12} color={iconColor} strokeWidth={1.6} />
+                      <span style={s.mobileFilePillLabel}>{sec.display}</span>
+                      {isDone && <CheckCircle2 size={10} color="var(--green)" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAssetsPanel(s => !s)}
+              style={s.mobileAssetsToggle}
+            >
+              <ImagePlus size={12} />
+              <span>Add assets</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', transform: showAssetsPanel ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }}>
+                <ChevronDown size={14} color="var(--text-3)" />
+              </span>
+            </button>
+            {showAssetsPanel && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} style={s.mobileAssetsSection}>
+                <div style={s.assetsPanelHead}>
+                  <p style={s.assetsPanelTitle}>Upload images & files</p>
+                  <p style={s.assetsPanelSub}>Images, PDFs, docs for the site</p>
+                </div>
+                <input ref={assetRef} type="file" multiple onChange={onAssetUpload} style={{ display: 'none' }} accept="image/*,video/*,.pdf,.txt,.md,.doc,.docx" />
+                {siteAssets.length === 0 ? (
+                  <button style={s.assetsDropZone} onClick={() => assetRef.current?.click()}>
+                    <Upload size={13} color="var(--text-3)" />
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>Drop files or click to upload</span>
+                  </button>
+                ) : (
+                  <div style={s.assetsList}>
+                    {siteAssets.map((asset, i) => {
+                      const { label, Icon: AIcon, color } = assetTypeInfo(asset)
+                      return (
+                        <motion.div key={asset.name + i} style={s.assetRow}
+                          initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                        >
+                          {asset.url
+                            ? <img src={asset.url} alt="" style={s.assetThumb} />
+                            : <div style={{ ...s.assetThumbPlaceholder, background: `color-mix(in srgb, ${color} 12%, var(--bg-raised))` }}>
+                                <AIcon size={11} color={color} />
+                              </div>
+                          }
+                          <div style={s.assetMeta}>
+                            <span style={s.assetName}>{asset.name}</span>
+                            <span style={{ ...s.assetType, color }}>{label}</span>
+                          </div>
+                        </motion.div>
+                      )
+                    })}
+                    <button style={s.assetsAddMore} onClick={() => assetRef.current?.click()}>
+                      <Upload size={10} color="var(--text-3)" /> <span>Add more</span>
+                    </button>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </div>
+        )}
+
+        {/* File Explorer (desktop only; on mobile we use Plan tab) */}
+        <div style={{ ...s.explorer, ...(mobile ? { display: 'none' } : {}) }}>
           <div style={s.panelHead}>
             <span style={s.panelLabel}>Context & Files</span>
           </div>
@@ -899,8 +1010,8 @@ export default function PlanMode({ theme, onToggleTheme }) {
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1], delay: 0.45 }}
           >
             <div style={s.assetsPanelHead}>
-              <p style={s.assetsPanelTitle}>Site Assets</p>
-              <p style={s.assetsPanelSub}>Assets & content that will be used in the website as-is</p>
+              <p style={s.assetsPanelTitle}>Upload images & files</p>
+              <p style={s.assetsPanelSub}>Images, PDFs, docs for the site</p>
             </div>
             <input ref={assetRef} type="file" multiple onChange={onAssetUpload} style={{ display: 'none' }} accept="image/*,video/*,.pdf,.txt,.md,.doc,.docx" />
             {siteAssets.length === 0 ? (
@@ -938,10 +1049,16 @@ export default function PlanMode({ theme, onToggleTheme }) {
           </motion.div>
         </div>
 
-        <div style={{ ...s.divider, opacity: generatingPlan && filled.length === 0 ? 0 : 1, transition: 'opacity 0.4s ease' }} />
+        {!mobile && <div style={{ ...s.divider, opacity: generatingPlan && filled.length === 0 ? 0 : 1, transition: 'opacity 0.4s ease' }} />}
 
         {/* Editor panel — remaining */}
-        <div style={{ ...s.editor, flexGrow: generatingPlan && filled.length === 0 ? 0 : 3, opacity: generatingPlan && filled.length === 0 ? 0 : 1, transition: 'flex-grow 0.6s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease' }}>
+        <div style={{
+          ...s.editor,
+          flexGrow: generatingPlan && filled.length === 0 ? 0 : 3,
+          opacity: generatingPlan && filled.length === 0 ? 0 : 1,
+          transition: 'flex-grow 0.6s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease',
+          ...(mobile ? { display: mobileTab === 'plan' ? 'flex' : 'none' } : {}),
+        }}>
           <div style={s.panelHead}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               {activeSection && <activeSection.icon size={12} color="var(--amber)" strokeWidth={1.7} />}
@@ -1391,6 +1508,44 @@ const s = {
   errBadge:  { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--red)', background: 'rgba(200,90,90,0.1)', padding: '3px 10px', borderRadius: 100, border: '1px solid rgba(200,90,90,0.2)' },
 
   panels:  { display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 },
+
+  mobileTabBar: {
+    display: 'flex', flexShrink: 0,
+    borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-panel)',
+  },
+  mobileTab: {
+    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+    padding: '10px 0', fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-ui)',
+    background: 'none', border: 'none', borderBottom: '2px solid transparent',
+    cursor: 'pointer', transition: 'color 0.15s',
+    letterSpacing: '0.02em',
+  },
+
+  mobilePlanPanel: {
+    flexShrink: 0, display: 'flex', flexDirection: 'column',
+    background: 'var(--bg-editor)', borderBottom: '1px solid var(--border)',
+    maxHeight: '40%', minHeight: 0,
+  },
+  mobileFilePillBar: { flexShrink: 0, padding: '10px 0 8px', borderBottom: '1px solid var(--border)' },
+  mobileFilePillScroll: { display: 'flex', gap: 8, overflowX: 'auto', padding: '0 12px', paddingBottom: 2 },
+  mobileFilePill: {
+    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6,
+    padding: '8px 12px', borderRadius: 100, border: '1px solid var(--border)',
+    background: 'var(--bg-raised)', fontFamily: 'var(--font-ui)', fontSize: 12,
+    color: 'var(--text-2)', cursor: 'pointer', whiteSpace: 'nowrap',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  mobileFilePillActive: { borderColor: 'var(--amber)', background: 'var(--amber-dim)' },
+  mobileFilePillLabel: { fontWeight: 500 },
+  mobileAssetsToggle: {
+    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+    padding: '8px 12px', border: 'none', borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-raised)', fontFamily: 'var(--font-ui)', fontSize: 11.5,
+    color: 'var(--text-2)', cursor: 'pointer', textAlign: 'left',
+  },
+  mobileAssetsSection: { overflow: 'hidden', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' },
+
   divider: { width: 1, background: 'var(--border)', flexShrink: 0 },
 
   panelHead:  { height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, marginBottom: 0  },
@@ -1419,7 +1574,7 @@ const s = {
   genSummaryHeader: { display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' },
 
   /* Generation log */
-  genLog:  { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', width: 'clamp(680px, 100%, 680px)', margin:'0 auto' },
+  genLog:  { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', width: '100%', maxWidth: 680, margin: '0 auto' },
 
   /* Explorer — 20% */
   explorer:   { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-editor)', maxWidth: '20%' },
