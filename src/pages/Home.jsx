@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Zap, Map, ArrowRight, Paperclip, X } from 'lucide-react'
 import ThemeToggle from '../components/ThemeToggle.jsx'
@@ -11,6 +11,7 @@ const up = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition
 
 export default function Home({ theme, onToggleTheme }) {
   const navigate  = useNavigate()
+  const location  = useLocation()
   const [prompt,  setPrompt]  = useState('')
   const [recentPlans,  setRecentPlans]  = useState([])
   const [draftHistory, setDraftHistory] = useState([])
@@ -50,8 +51,8 @@ export default function Home({ theme, onToggleTheme }) {
   useEffect(() => {
     listPlans().then(setRecentPlans).catch(() => {})
     refreshDrafts()
-    return () => { clearInterval(pollRef.current) }
-  }, [])
+    return () => { clearInterval(pollRef.current); pollRef.current = null }
+  }, [location.key])
 
   useEffect(() => () => { clearInterval(blinkRef.current); clearTimeout(blinkTimeout.current) }, [])
 
