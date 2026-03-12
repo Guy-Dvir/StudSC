@@ -228,9 +228,8 @@ export default function PlanMode({ theme, onToggleTheme }) {
   const [uploads,        setUploads]       = useState([])
   const [error,          setError]         = useState('')
   const [generating,     setGenerating]    = useState(false)
-  const [generatingPlan,      setGeneratingPlan]      = useState(false)
-  const [hasStartedStreaming, setHasStartedStreaming] = useState(false)
-  const [genLines,            setGenLines]            = useState([])
+  const [generatingPlan, setGeneratingPlan] = useState(false)
+  const [genLines,       setGenLines]       = useState([])
   const [sectionStatus,       setSectionStatus]       = useState({})
   const [hoveredFile,    setHoveredFile]    = useState(null)
   const [siteAssets,       setSiteAssets]       = useState([])
@@ -250,8 +249,9 @@ export default function PlanMode({ theme, onToggleTheme }) {
   const chatBlinkTO  = useRef(null)
   const inputRef     = useRef(null)
   const saveTimer    = useRef(null)
-  const esRef        = useRef(null)
-  const typingRef    = useRef(null)
+  const esRef           = useRef(null)
+  const typingRef       = useRef(null)
+  const userBrowsingRef = useRef(false)
 
   useEffect(() => () => {
     esRef.current?.close()
@@ -335,8 +335,9 @@ export default function PlanMode({ theme, onToggleTheme }) {
   }
 
   function startGeneration(planId) {
+    if (esRef.current) return  // prevent duplicate calls (React Strict Mode double-invoke)
+    userBrowsingRef.current = false
     setGeneratingPlan(true)
-    setHasStartedStreaming(false)
     setGenLines([{ type: 'working', text: 'Analyzing your brief…' }])
     setSectionStatus({})
 
@@ -351,15 +352,16 @@ export default function PlanMode({ theme, onToggleTheme }) {
       streamBuf[secId] = ''
       setSectionStatus(p => ({ ...p, [secId]: 'writing' }))
       setGenLines(p => [...p, { type: 'working', text: `Writing ${sec?.display}…`, id: secId }])
-      setActiveFile(secId)
-      setEditContent('')
-      setHasStartedStreaming(true)
+      if (!userBrowsingRef.current) {
+        setActiveFile(secId)
+        setEditContent('')
+      }
     })
 
     es.addEventListener('section_chunk', e => {
       const { id: secId, chunk } = JSON.parse(e.data)
       streamBuf[secId] = (streamBuf[secId] || '') + chunk
-      setEditContent(streamBuf[secId])
+      if (!userBrowsingRef.current) setEditContent(streamBuf[secId])
     })
 
     es.addEventListener('section_done', e => {
@@ -380,6 +382,7 @@ export default function PlanMode({ theme, onToggleTheme }) {
     })
 
     es.addEventListener('done', () => {
+      userBrowsingRef.current = false
       setGeneratingPlan(false)
       setSectionStatus({})
       setGenLines(p => [...p, { type: 'complete', text: `All ${SECTIONS.length} sections ready.` }])
@@ -412,7 +415,11 @@ export default function PlanMode({ theme, onToggleTheme }) {
   }
 
   function openFile(sectionId) {
+    const hasContent = !!plan.sections?.[sectionId]?.trim()
+    if (generatingPlan && !hasContent) return
+    if (generatingPlan) userBrowsingRef.current = true
     setActiveFile(sectionId)
+    setEditContent(plan.sections?.[sectionId] || '')
     setSaveStatus('saved')
   }
 
@@ -610,18 +617,15 @@ export default function PlanMode({ theme, onToggleTheme }) {
       <div style={s.panels}>
 
         {/* Chat panel — LEFT */}
-        <div style={{ ...s.chatPanel, flexGrow: (generatingPlan && !hasStartedStreaming) ? 2 : 1, transition: 'flex-grow 0.7s cubic-bezier(0.22,1,0.36,1)' }}>
+        <div style={s.chatPanel}>
           <div style={s.panelHead}>
             {generatingPlan
               ? <span style={{ ...s.panelLabel, color: 'var(--amber)' }}>Generating</span>
               : <span style={s.panelLabel}>Aria</span>
             }
-          </div>
 
-          {generatingPlan ? (
-            <div style={s.genLog}>
-              {/* Progress bar */}
-              {(() => {
+          {/* Progress bar */}
+          {(() => {
                 const total = SECTIONS.length
                 const done = genLines.filter(l => l.type === 'complete' || l.type === 'done').length
                 const pct = Math.round((done / total) * 100)
@@ -637,9 +641,12 @@ export default function PlanMode({ theme, onToggleTheme }) {
                   </div>
                 )
               })()}
+          </div>
 
+          {generatingPlan ? (
+            <div style={s.genLog}>
               {/* Step rows */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 16px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 16px' }}>
                 <AnimatePresence initial={false}>
                   {genLines.map((line, i) => {
                     const isDone = line.type === 'complete' || line.type === 'done'
@@ -938,10 +945,10 @@ export default function PlanMode({ theme, onToggleTheme }) {
           </motion.div>
         </div>
 
-        <div style={{ ...s.divider, opacity: (generatingPlan && !hasStartedStreaming) ? 0 : 1, transition: 'opacity 0.4s ease' }} />
+        <div style={{ ...s.divider, opacity: generatingPlan && filled.length === 0 ? 0 : 1, transition: 'opacity 0.4s ease' }} />
 
         {/* Editor panel — remaining */}
-        <div style={{ ...s.editor, flexGrow: (generatingPlan && !hasStartedStreaming) ? 0 : 3, opacity: (generatingPlan && !hasStartedStreaming) ? 0 : 1, transition: 'flex-grow 0.7s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease' }}>
+        <div style={{ ...s.editor, flexGrow: generatingPlan && filled.length === 0 ? 0 : 3, opacity: generatingPlan && filled.length === 0 ? 0 : 1, transition: 'flex-grow 0.6s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease' }}>
           <div style={s.panelHead}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
               {activeSection && <activeSection.icon size={12} color="var(--amber)" strokeWidth={1.7} />}
@@ -1103,11 +1110,11 @@ function SitemapCardGrid({ content }) {
             <span style={s.sitemapCardName}>{page.name}</span>
             {page.children.length > 0 && (
               <div style={s.sitemapChildren}>
-                {page.children.slice(0, 4).map((c, j) => (
+                {page.children.slice(0, 3).map((c, j) => (
                   <span key={j} style={s.sitemapChip}>{c.name}</span>
                 ))}
-                {page.children.length > 4 && (
-                  <span style={{ ...s.sitemapChip, opacity: 0.45 }}>+{page.children.length - 4}</span>
+                {page.children.length > 3 && (
+                  <span style={{ ...s.sitemapChip, opacity: 0.45 }}>+{page.children.length - 3}</span>
                 )}
               </div>
             )}
@@ -1393,11 +1400,11 @@ const s = {
   panels:  { display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 },
   divider: { width: 1, background: 'var(--border)', flexShrink: 0 },
 
-  panelHead:  { height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid var(--border)', flexShrink: 0 },
+  panelHead:  { height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, marginBottom: 18  },
   panelLabel: { fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)' },
 
   /* Chat — 20% */
-  chatPanel: { flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-panel)' },
+  chatPanel: { flexGrow: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-panel)' },
   chatEmpty: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px 18px', gap: 10, textAlign: 'center' },
   msgs:      { flex: 1, overflow: 'auto', padding: '12px 12px 6px', display: 'flex', flexDirection: 'column', gap: 10 },
   msgRow:    { display: 'flex' },
@@ -1419,10 +1426,10 @@ const s = {
   genSummaryHeader: { display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 6, borderBottom: '1px solid var(--border)' },
 
   /* Generation log */
-  genLog:  { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' },
+  genLog:  { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', width: 'clamp(680px, 100%, 680px)', margin:'0 auto' },
 
   /* Explorer — 20% */
-  explorer:   { flexGrow: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-panel)' },
+  explorer:   { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-editoreditor)', maxWidth: '20%' },
   planSlug:   { fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-ui)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   fileList:   { padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 6 },
 
@@ -1454,7 +1461,7 @@ const s = {
   assetsAddMore:    { display:'flex', alignItems:'center', gap:5, padding:'6px 12px', fontSize:10.5, color:'var(--text-3)', background:'transparent', border:'none', cursor:'pointer', borderTop:'1px solid var(--border)', width:'100%', fontFamily:'var(--font-ui)' },
 
   /* Editor — remaining */
-  editor:         { flexBasis: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: 'var(--bg-editor)' },
+  editor:         { flexGrow: 3, flexBasis: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: 'var(--bg-editoreditor)' },
   editorFileName: { fontSize: 11.5, fontFamily: 'var(--font-ui)', color: 'var(--text-2)' },
   wysiwygEditor:  { padding: '22px 28px', minHeight: '100%', cursor: 'text' },
   wysiwygPlaceholder: { position: 'absolute', top: 22, left: 28, right: 28, fontSize: 13, lineHeight: 1.75, color: 'var(--text-3)', pointerEvents: 'none', fontFamily: 'var(--font-ui)' },
@@ -1468,10 +1475,10 @@ const s = {
   /* Sitemap card grid */
   sitemapBar:      { padding:'12px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-raised)', flexShrink:0 },
   sitemapScroll:   { display:'flex', gap:8, overflowX:'auto', paddingBottom:2 },
-  sitemapCard:     { flexShrink:0, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', padding:'8px 12px', minWidth:80, maxWidth:140, background:'var(--bg)', display:'flex', flexDirection:'column', gap:5 },
+  sitemapCard:     { flexShrink:0, border:'1px solid var(--border)', borderRadius:'var(--r-sm)', padding:'8px 12px', width:160, background:'var(--bg)', display:'flex', flexDirection:'column', gap:5 },
   sitemapCardName: { fontSize:11.5, fontWeight:600, color:'var(--text)', fontFamily:'var(--font-ui)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' },
   sitemapChildren: { display:'flex', flexWrap:'wrap', gap:3 },
-  sitemapChip:     { fontSize:9.5, padding:'1px 6px', borderRadius:100, background:'var(--bg-raised)', border:'1px solid var(--border)', color:'var(--text-3)', fontFamily:'var(--font-ui)', whiteSpace:'nowrap' },
+  sitemapChip:     { fontSize:9.5, padding:'1px 6px', borderRadius:100, background:'var(--bg-raised)', border:'1px solid var(--border)', color:'var(--text-3)', fontFamily:'var(--font-ui)', whiteSpace:'nowrap', maxWidth:'100%', overflow:'hidden', textOverflow:'ellipsis' },
 
   /* Color palette bar */
   paletteBar:      { display:'flex', flexWrap:'wrap', gap:12, padding:'14px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg-raised)', flexShrink:0, alignItems:'flex-end' },
