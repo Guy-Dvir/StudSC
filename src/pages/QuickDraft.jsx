@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RefreshCw, Expand, X, Zap, ArrowRight } from 'lucide-react'
-import { generateDrafts, saveDraftSession } from '../lib/api.js'
+import { ArrowLeft, RefreshCw, Expand, Code2, Download, X, Zap, ArrowRight } from 'lucide-react'
+import { generateDrafts } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const ease = [0.22, 1, 0.36, 1]
@@ -13,7 +13,6 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const [drafts,   setDrafts]   = useState(state?.drafts || [])
   const [prompt,   setPrompt]   = useState(state?.prompt || '')
   const [loading,  setLoading]  = useState(!state?.drafts?.length && !!state?.prompt)
-  const [regenerating, setRegenerating] = useState(false)
   const [error,    setError]    = useState('')
   const [expanded, setExpanded] = useState(null)
   const [showCode, setShowCode] = useState(null)
@@ -29,24 +28,16 @@ export default function QuickDraft({ theme, onToggleTheme }) {
       if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
       setDrafts(d)
       setExpanded(null); setShowCode(null)
-      saveDraftSession(p, d).catch(() => {})
+      try {
+        const prev = JSON.parse(localStorage.getItem('draft-history') || '[]')
+        prev.unshift({ id: Date.now().toString(), prompt: p, generatedAt: new Date().toISOString(), drafts: d })
+        localStorage.setItem('draft-history', JSON.stringify(prev.slice(0, 20)))
+      } catch (_) {}
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
 
-  async function regenerate() {
-    setRegenerating(true); setError('')
-    try {
-      const { drafts: d } = await generateDrafts(prompt)
-      if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
-      setDrafts(prev => {
-        const updated = [...prev, ...d]
-        saveDraftSession(prompt, updated).catch(() => {})
-        return updated
-      })
-    } catch (err) { setError(err.message) }
-    finally { setRegenerating(false) }
-  }
+  async function regenerate() { await generate(prompt) }
 
   function download(draft) {
     const blob = new Blob([draft.html], { type: 'text/html' })
@@ -64,11 +55,11 @@ export default function QuickDraft({ theme, onToggleTheme }) {
         </button>
         <div style={s.promptChip}>
           <span style={s.chipText}>{prompt}</span>
-          <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading || regenerating} style={{ flexShrink: 0 }}>
-            <motion.span animate={regenerating ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: regenerating ? Infinity : 0, ease: 'linear' }}>
+          <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading} style={{ flexShrink: 0 }}>
+            <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
               <RefreshCw size={12} />
             </motion.span>
-            {regenerating ? 'Regenerating…' : 'Regenerate'}
+            {loading ? 'Regenerating…' : 'Regenerate'}
           </button>
         </div>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -109,11 +100,6 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                     onGenerateSite={() => download(d)}
                     onGoToEditor={() => setShowCode(i)}
                   />
-                </motion.div>
-              ))}
-              {regenerating && [0,1,2].map(i => (
-                <motion.div key={`regen-sk-${i}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease, delay: i * 0.08 }}>
-                  <DraftSkeleton index={i} />
                 </motion.div>
               ))}
             </motion.div>
@@ -189,7 +175,7 @@ function DraftSkeleton({ index }) {
   }, [])
 
   return (
-    <div style={{ ...s.card, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ ...s.card, position: 'relative', overflow: 'hidden', borderTopColor: accent, borderTopWidth: 2 }}>
       <motion.div
         style={{
           position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
@@ -199,8 +185,11 @@ function DraftSkeleton({ index }) {
         transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut', delay: index * 0.55 }}
       />
 
+      <div style={s.cardLine} />
+
       <div style={s.cardHead}>
         <div style={s.cardMeta}>
+          <span style={{ ...s.cardNum, color: accent }}>0{index + 1}</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <Shimmer width={90} height={11} accent={accent} />
             <Shimmer width={60} height={9} accent={accent} delay={0.1} />
@@ -265,7 +254,7 @@ const ACCENTS = [
   { color: '#A09BCC', glow: 'rgba(160,155,204,0.25)' },
 ]
 
-function DraftCard({ draft, index, onExpand, onDownload, onGenerateSite, onGoToEditor }) {
+function DraftCard({ draft, index, onExpand, onGenerateSite, onGoToEditor }) {
   const [hov, setHov] = useState(false)
   const ac = ACCENTS[index % 3]
 
