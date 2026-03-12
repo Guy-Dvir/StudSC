@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto'
 
 const router = express.Router()
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const DRAFTS_DIR = join(__dirname, '../../drafts')
+const DRAFTS_DIR = join(__dirname, '../../artifacts/drafts')
 
 const DRAFT_PROMPT = (userPrompt) => `You are an expert web designer and creative director. Generate 3 completely different homepage designs for the following business/project:
 

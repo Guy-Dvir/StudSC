@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto'
 
 const router = express.Router()
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const PLANS_DIR = join(__dirname, '../../plans')
+const PLANS_DIR = join(__dirname, '../../artifacts/plans')
 
 const SECTIONS = [
   { id: 'goals-brief', label: 'Goals & Brief', emoji: '🎯' },
