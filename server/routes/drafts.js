@@ -9,15 +9,27 @@ const router = express.Router()
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DRAFTS_DIR = join(__dirname, '../../artifacts/drafts')
 
-const DRAFT_PROMPT = (userPrompt) => `You are an expert web designer and creative director. Generate 3 completely different homepage designs for the following business/project:
+const STYLES = [
+  { direction: 'modern/bold', label: 'first' },
+  { direction: 'clean/minimal', label: 'second' },
+  { direction: 'warm/expressive', label: 'third' },
+]
+
+const SINGLE_DRAFT_PROMPT = (userPrompt, direction, index, previousStyles) => {
+  const avoid = previousStyles.length
+    ? `\nIMPORTANT: You already generated: ${previousStyles.join(', ')}. This design MUST be dramatically different in layout, color, and typography.`
+    : ''
+  return `You are an expert web designer and creative director. Generate ONE homepage design for the following business/project:
 
 "${userPrompt}"
 
-Return ONLY a valid JSON array (no markdown fences, no explanation) with exactly 3 objects. Each object must have:
-- "style": string - a catchy 2-3 word style name (e.g., "Bold Editorial", "Clean Minimalist")
-- "palette": string - brief description like "Deep navy + warm gold"
-- "mood": string - one sentence capturing the feeling
-- "html": string - a COMPLETE, self-contained HTML document
+Design direction: ${direction} (this is design #${index + 1} of 3)${avoid}
+
+Return a JSON object with:
+- "style": a catchy 2-3 word style name (e.g., "Bold Editorial", "Clean Minimalist")
+- "palette": brief description like "Deep navy + warm gold"
+- "mood": one sentence capturing the feeling
+- "html": a COMPLETE, self-contained HTML document
 
 HTML requirements:
 - All CSS embedded in a <style> tag — NO external dependencies, NO CDN links
@@ -25,48 +37,74 @@ HTML requirements:
 - Use CSS custom properties for theming
 - Replace images with beautiful CSS gradients, SVG patterns, or solid colored blocks
 - Include realistic, relevant placeholder content (not generic Lorem Ipsum — make it specific to the business)
-- CRITICAL: Each homepage MUST contain between 5 and 10 distinct sections (not including the header and footer). Always include: a nav bar, a hero (full viewport height), and a footer. Fill the remaining sections (minimum 5 more) from this pool — choose what fits the business: features/services, pricing, testimonials/social proof, stats/numbers, team, about, process/how-it-works, FAQ, CTA banner, gallery/portfolio. Each design should use a different selection of sections.
+- CRITICAL: The homepage MUST contain between 5 and 10 distinct sections (not including the header and footer). Always include: a nav bar, a hero (full viewport height), and a footer. Fill the remaining sections (minimum 5 more) from this pool — choose what fits the business: features/services, pricing, testimonials/social proof, stats/numbers, team, about, process/how-it-works, FAQ, CTA banner, gallery/portfolio.
 - Use CSS animations (fade-in, slide-up) for polish
 - The page should look like a real, production-ready website — impressive typography, spacing, and color use
-- Responsive (works at 1280px width)
+- Responsive (works at 1280px width)`
+}
 
-The 3 designs MUST be dramatically different: vary the layout structure, color palette, typography scale, section arrangements, and overall visual personality. Think: one modern/bold, one clean/minimal, one warm/expressive.`
+const DRAFT_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    style: { type: 'STRING' },
+    palette: { type: 'STRING' },
+    mood: { type: 'STRING' },
+    html: { type: 'STRING' },
+  },
+  required: ['style', 'palette', 'mood', 'html'],
+}
 
-router.post('/generate', async (req, res) => {
-  const { prompt } = req.body
+// SSE endpoint — streams each draft as it's ready
+router.get('/generate', async (req, res) => {
+  const prompt = req.query.prompt
   if (!prompt) return res.status(400).json({ error: 'Prompt is required' })
+
+  res.setHeader('Content-Type', 'text/event-stream')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders()
+
+  const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+
+  const drafts = []
+  const previousStyles = []
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3-flash-preview',
-      generationConfig: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'ARRAY',
-          items: {
-            type: 'OBJECT',
-            properties: {
-              style: { type: 'STRING' },
-              palette: { type: 'STRING' },
-              mood: { type: 'STRING' },
-              html: { type: 'STRING' },
-            },
-            required: ['style', 'palette', 'mood', 'html'],
-          },
+
+    for (let i = 0; i < STYLES.length; i++) {
+      send('draft_start', { index: i })
+
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-3-flash-preview',
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: DRAFT_SCHEMA,
         },
-      },
-    })
+      })
 
-    const result = await model.generateContent(DRAFT_PROMPT(prompt))
-    const text = result.response.text()
-    const drafts = JSON.parse(text)
+      const result = await model.generateContent(
+        SINGLE_DRAFT_PROMPT(prompt, STYLES[i].direction, i, previousStyles)
+      )
+      const draft = JSON.parse(result.response.text())
+      drafts.push(draft)
+      previousStyles.push(draft.style)
+      send('draft_ready', { index: i, draft })
+    }
 
-    res.json({ drafts })
+    // Auto-save the session
+    await fs.ensureDir(DRAFTS_DIR)
+    const id = randomUUID()
+    const session = { id, prompt, generatedAt: new Date().toISOString(), drafts }
+    await fs.writeJson(join(DRAFTS_DIR, `${id}.json`), session)
+
+    send('done', { sessionId: id })
   } catch (err) {
     console.error('Draft generation error:', err)
-    res.status(500).json({ error: err.message || 'Failed to generate drafts' })
+    send('error', { message: err.message || 'Generation failed' })
   }
+
+  res.end()
 })
 
 // List saved draft sessions (metadata only, no HTML)

@@ -1,13 +1,25 @@
 const BASE = '/api'
 
-export async function generateDrafts(prompt) {
-  const res = await fetch(`${BASE}/drafts/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
+export function streamDrafts(prompt, { onDraftStart, onDraftReady, onDone, onError }) {
+  const url = `${BASE}/drafts/generate?prompt=${encodeURIComponent(prompt)}`
+  const source = new EventSource(url)
+
+  source.addEventListener('draft_start', (e) => {
+    onDraftStart?.(JSON.parse(e.data))
   })
-  if (!res.ok) throw new Error((await res.json()).error || 'Failed to generate')
-  return res.json()
+  source.addEventListener('draft_ready', (e) => {
+    onDraftReady?.(JSON.parse(e.data))
+  })
+  source.addEventListener('done', (e) => {
+    onDone?.(JSON.parse(e.data))
+    source.close()
+  })
+  source.addEventListener('error', (e) => {
+    try { onError?.(JSON.parse(e.data)) } catch (_) { onError?.({ message: 'Connection lost' }) }
+    source.close()
+  })
+
+  return () => source.close()
 }
 
 export async function createPlan(name, initialPrompt) {

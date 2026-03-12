@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, RefreshCw, Expand, Code2, Download, X, Zap, ArrowRight } from 'lucide-react'
-import { generateDrafts, saveDraftSession } from '../lib/api.js'
+import { streamDrafts } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const ease = [0.22, 1, 0.36, 1]
@@ -12,28 +12,51 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const navigate   = useNavigate()
   const [drafts,   setDrafts]   = useState(state?.drafts || [])
   const [prompt,   setPrompt]   = useState(state?.prompt || '')
-  const [loading,  setLoading]  = useState(!state?.drafts?.length && !!state?.prompt)
+  const [genPrompt, setGenPrompt] = useState(state?.generatePrompt || state?.prompt || '')
+  const [loading,  setLoading]  = useState(false)
+  const [loadingSlots, setLoadingSlots] = useState([false, false, false])
   const [error,    setError]    = useState('')
   const [expanded, setExpanded] = useState(null)
   const [showCode, setShowCode] = useState(null)
+  const cleanupRef = useRef(null)
 
   useEffect(() => {
-    if (!state?.drafts?.length && state?.prompt) generate(state.prompt)
+    if (!state?.drafts?.length && genPrompt) generate(genPrompt)
+    return () => cleanupRef.current?.()
   }, [])
 
-  async function generate(p) {
+  function generate(p) {
+    cleanupRef.current?.()
     setLoading(true); setError('')
-    try {
-      const { drafts: d } = await generateDrafts(p)
-      if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
-      setDrafts(d)
-      setExpanded(null); setShowCode(null)
-      try { await saveDraftSession(p, d) } catch (_) {}
-    } catch (err) { setError(err.message) }
-    finally { setLoading(false) }
+    setDrafts([]); setExpanded(null); setShowCode(null)
+    setLoadingSlots([true, true, true])
+
+    cleanupRef.current = streamDrafts(p, {
+      onDraftReady({ index, draft }) {
+        setDrafts(prev => {
+          const next = [...prev]
+          next[index] = draft
+          return next
+        })
+        setLoadingSlots(prev => {
+          const next = [...prev]
+          next[index] = false
+          return next
+        })
+      },
+      onDone() {
+        setLoading(false)
+        setLoadingSlots([false, false, false])
+      },
+      onError({ message }) {
+        setError(message || 'Generation failed')
+        setLoading(false)
+        setLoadingSlots([false, false, false])
+      },
+    })
   }
 
-  async function regenerate() { await generate(prompt) }
+  function regenerate() { generate(genPrompt) }
 
   function download(draft) {
     const blob = new Blob([draft.html], { type: 'text/html' })
@@ -67,40 +90,33 @@ export default function QuickDraft({ theme, onToggleTheme }) {
 
       {/* Grid */}
       <div style={s.body}>
-        {!loading && drafts.length > 0 && (
+        {(drafts.length > 0 || loading) && (
           <div style={s.gridTitle}>Homepage Drafts</div>
         )}
-        <AnimatePresence mode="wait">
-          {loading ? (
-            <motion.div key="sk" style={s.grid} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {[0,1,2].map(i => <DraftSkeleton key={i} index={i} />)}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="gr"
-              style={s.grid}
-              initial="h" animate="s"
-              variants={{ s: { transition: { staggerChildren: 0.13 } } }}
-            >
-              {drafts.map((d, i) => (
-                <motion.div key={d.style + i}
-                  variants={{
-                    h: { opacity: 0, y: 40, scale: 0.95 },
-                    s: { opacity: 1, y: 0,  scale: 1, transition: { duration: 0.6, ease } }
-                  }}
+        <div style={s.grid}>
+          {[0, 1, 2].map(i => (
+            <AnimatePresence key={i} mode="wait">
+              {loadingSlots[i] ? (
+                <motion.div key={`sk-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <DraftSkeleton index={i} />
+                </motion.div>
+              ) : drafts[i] ? (
+                <motion.div key={`card-${i}`}
+                  initial={{ opacity: 0, y: 40, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.6, ease } }}
                 >
                   <DraftCard
-                    draft={d} index={i}
+                    draft={drafts[i]} index={i}
                     onExpand={() => setExpanded(i)}
-                    onDownload={() => download(d)}
-                    onGenerateSite={() => download(d)}
+                    onDownload={() => download(drafts[i])}
+                    onGenerateSite={() => download(drafts[i])}
                     onGoToEditor={() => setShowCode(i)}
                   />
                 </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              ) : null}
+            </AnimatePresence>
+          ))}
+        </div>
       </div>
 
       {/* Expand modal */}

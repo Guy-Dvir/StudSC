@@ -7,7 +7,7 @@ import {
   CheckCircle2, Circle, Save, MessageSquare, ChevronRight, Upload,
   Image, FileType2, Film, Pencil,
 } from 'lucide-react'
-import { getPlan, sendChat, uploadFile, saveSection, generateDrafts } from '../lib/api.js'
+import { getPlan, sendChat, uploadFile, saveSection } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const SECTIONS = [
@@ -485,21 +485,14 @@ export default function PlanMode({ theme, onToggleTheme }) {
     e.target.value = ''
   }
 
-  async function handleGenerate() {
+  function handleGenerate() {
     if (!plan || generating) return
-    setGenerating(true); setError('')
-    try {
-      const planContext = SECTIONS
-        .filter(s => plan.sections?.[s.id]?.trim())
-        .map(s => `## ${s.display}\n${plan.sections[s.id]}`)
-        .join('\n\n')
-      const prompt = `Based on this comprehensive website plan:\n\n${planContext}\n\nGenerate 3 homepage designs that faithfully reflect the brand, goals, and aesthetic direction described above.`
-      const { drafts } = await generateDrafts(prompt)
-      navigate('/quick-draft', { state: { drafts, prompt: plan.name, fromPlan: true } })
-    } catch (err) {
-      setError(err.message)
-      setGenerating(false)
-    }
+    const planContext = SECTIONS
+      .filter(s => plan.sections?.[s.id]?.trim())
+      .map(s => `## ${s.display}\n${plan.sections[s.id]}`)
+      .join('\n\n')
+    const prompt = `Based on this comprehensive website plan:\n\n${planContext}\n\nGenerate 3 homepage designs that faithfully reflect the brand, goals, and aesthetic direction described above.`
+    navigate('/quick-draft', { state: { prompt: plan.name, generatePrompt: prompt, fromPlan: true } })
   }
 
   function downloadFile(filename, content) {
