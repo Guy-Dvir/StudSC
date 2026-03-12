@@ -1,30 +1,28 @@
-## Site Hierarchy & Architecture
-
-The structure for **COOL** prioritizes a "discovery-first" experience, blending high-end editorial content with a streamlined e-commerce engine.
-
-*   **Home**: Immersive video hero, trending drops, and brand manifesto.
-*   **Shop**: Central hub for all commerce.
-    *   **Collections**: Thematic seasonal releases (e.g., "The Sub-Zero Series").
-    *   **New Arrivals**: High-velocity product rotation.
-    *   **Archive**: Past favorites and limited-run re-releases.
-*   **Lookbook**: Interactive editorial galleries with "Shop the Look" integration.
-*   **The Journal**: Behind-the-scenes content and artist collaborations.
-*   **About**: Brand ethos, sustainability practices, and team identity.
-*   **Support**: FAQ, Shipping/Returns, and Contact portal.
+## Full Page Hierarchy
+* **Home** (Dynamic hero for latest drops, curated collections, brand mission statement)
+* **Shop All**
+    * **New Arrivals** (Seasonal "COOL" drops)
+    * **Apparel** (Tees, Hoodies, Outerwear)
+    * **Accessories** (Headwear, Objects, Lifestyle)
+    * **Collaborations** (Limited edition partner releases)
+    * **Archive** (Discounted past seasons)
+* **The Lab** (Editorial blog, behind-the-scenes content, and lookbooks)
+* **About**
+    * **Our Story** (Brand heritage and vision)
+    * **Sustainability** (Supply chain transparency)
+* **Support** (FAQ, Shipping & Returns, Order Tracking, Contact)
 
 ## Main Navigation Structure
-
-*   **Primary Navigation**: Minimalist sticky header featuring [Shop], [Lookbook], [The Journal], and [Cart/Search] icons.
-*   **Footer**: Multi-column utility layout including [Newsletter Signup], [Social Links], [Terms of Service], and [Contact].
+* **Primary (Top Left):** Shop, New Drops, The Lab.
+* **Utility (Top Right):** Search, Account, Cart (Slide-out drawer).
+* **Footer:** Newsletter Opt-in, Social Icons (Instagram, TikTok, Discord), Legal, and Currency Selector.
 
 ## Key User Flows
-
-1.  **The Quick Conversion**: Home > Featured Product > Mini-Cart Overlay > Direct Checkout.
-2.  **Editorial Discovery**: Social Media > Lookbook Gallery > Interactive Hotspot > Product Detail Page > Cart.
-3.  **Brand Immersion**: The Journal > Sustainability Article > About Page > Newsletter Signup.
+* **The Drop Hunter:** Instagram Ad → Limited Edition Landing Page → Size Selection → Express Checkout (Apple Pay/ShopPay).
+* **The Brand Explorer:** Home → The Lab (Lookbook) → "Shop the Look" Hotspots → Product Detail Page (PDP) → Add to Cart.
+* **The Return Customer:** Account Login → Order History → Re-order/Support Ticket → Homepage for New Arrivals.
 
 ## Page-Level Notes
-
-*   **Product Detail Pages (PDP)**: Focused on high-resolution video loops and modular "Style With" cross-sell components. 
-*   **Lookbook**: Utilizes parallax scrolling and non-linear navigation to encourage long-session brand engagement. 
-*   **Check-Out**: Single-page, mobile-optimized flow with "Guest Checkout" as the default to minimize friction.
+* **Product Detail Pages (PDP):** Must feature high-definition video loops of fit and a "Style With" recommendation engine to increase AOV.
+* **The Lab:** Layout should prioritize a "zine" aesthetic with masonry grids and integrated product tags for seamless commerce.
+* **Checkout:** Optimized for mobile-first users with one-click payment integrations and minimal form fields.

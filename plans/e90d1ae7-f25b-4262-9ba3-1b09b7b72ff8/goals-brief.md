@@ -1,21 +1,20 @@
 ## Business Objectives
-The primary objective for **COOL** is to disrupt the traditional HVAC market by positioning climate control as a premium wellness and smart-home category. The brand aims to shift from one-off emergency repairs to a recurring revenue model driven by **"COOL-Care"** preventative maintenance subscriptions and high-end air purification installations.
+The primary objective for **COOL** is to disrupt the traditional residential HVAC market by repositioning climate control as a premium lifestyle and wellness investment. The brand seeks to scale its high-margin installation division and establish a dominant digital presence that reflects its "design-first" approach to sustainable engineering.
 
 ## Website Goals
-*   **Primary:** Drive high-intent lead generation through an interactive "System Match" configuration tool.
-*   **Secondary:** Establish brand authority via an educational "Clean Air" resource hub and provide a seamless client portal for subscription management.
+*   **Primary:** Generate high-intent leads through an interactive "Climate Design" consultation tool.
+*   **Secondary:** Educate users on the ROI of eco-friendly smart systems and reduce administrative overhead via an automated client onboarding portal.
 
 ## Target Audience Breakdown
-*   **The Wellness Homeowner:** High-income professionals (ages 30–55) who prioritize indoor air quality, minimalist aesthetics, and eco-friendly technology.
-*   **The Modern Architect:** Commercial partners looking for "invisible" climate solutions that integrate with high-end interior design.
-*   **Existing Members:** Current subscribers requiring a friction-free mobile interface to schedule seasonal tuning.
+*   **Affluent Homeowners (Ages 30–55):** Tech-savvy professionals who value minimalist aesthetics, sustainability, and seamless smart-home integration.
+*   **Luxury Developers & Architects:** B2B partners looking for technical specifications and high-end aesthetic reliability for premium builds.
 
 ## Success Metrics (KPIs)
-*   **Conversion Rate:** Target 5% or higher on the "Request a Quote" landing pages.
-*   **Engagement:** Increase average session duration to >3 minutes via the interactive configuration tool.
-*   **Retention:** 20% increase in member portal logins for recurring service scheduling.
+*   **Conversion Rate:** Achieve a 4.5% conversion rate on the primary consultation form.
+*   **Lead Quality:** Maintain an average project inquiry value of $15,000+.
+*   **Engagement:** Increase "Time on Page" by 40% through 3D product visualizations and interactive efficiency calculators.
 
 ## Project Constraints
-*   **Technical:** Must offer full API integration with **ServiceTitan** for real-time scheduling and CRM syncing.
-*   **Performance:** Mandatory <2.0s load time on mobile to satisfy field-use requirements.
-*   **Design:** Strict adherence to a "High-Tech Minimalist" visual identity, avoiding typical blue/orange industry tropes.
+*   **Technical Integration:** The site must feature a two-way sync with **ServiceTitan** for scheduling and **HubSpot** for lead nurturing.
+*   **Timeline:** Firm 10-week development cycle to ensure a live launch before the peak summer season.
+*   **Brand Guidelines:** Strict adherence to a high-contrast, "cool-toned" minimalist visual identity with a maximum of three primary UI colors.

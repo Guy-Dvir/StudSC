@@ -1400,7 +1400,7 @@ const s = {
   panels:  { display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 },
   divider: { width: 1, background: 'var(--border)', flexShrink: 0 },
 
-  panelHead:  { height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, marginBottom: 18  },
+  panelHead:  { height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 14px', borderBottom: '1px solid var(--border)', flexShrink: 0, marginBottom: 0  },
   panelLabel: { fontSize: 10.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-3)' },
 
   /* Chat — 20% */
@@ -1429,7 +1429,7 @@ const s = {
   genLog:  { flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column', width: 'clamp(680px, 100%, 680px)', margin:'0 auto' },
 
   /* Explorer — 20% */
-  explorer:   { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-editoreditor)', maxWidth: '20%' },
+  explorer:   { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--bg-editor)', maxWidth: '20%' },
   planSlug:   { fontSize: 10, color: 'var(--text-3)', fontFamily: 'var(--font-ui)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   fileList:   { padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 6 },
 
@@ -1461,9 +1461,9 @@ const s = {
   assetsAddMore:    { display:'flex', alignItems:'center', gap:5, padding:'6px 12px', fontSize:10.5, color:'var(--text-3)', background:'transparent', border:'none', cursor:'pointer', borderTop:'1px solid var(--border)', width:'100%', fontFamily:'var(--font-ui)' },
 
   /* Editor — remaining */
-  editor:         { flexGrow: 3, flexBasis: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: 'var(--bg-editoreditor)' },
+  editor:         { flexGrow: 3, flexBasis: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, background: 'var(--bg-editor)' },
   editorFileName: { fontSize: 11.5, fontFamily: 'var(--font-ui)', color: 'var(--text-2)' },
-  wysiwygEditor:  { padding: '22px 28px', minHeight: '100%', cursor: 'text' },
+  wysiwygEditor:  { padding: '0 28px 22px 28px', minHeight: '100%', cursor: 'text' },
   wysiwygPlaceholder: { position: 'absolute', top: 22, left: 28, right: 28, fontSize: 13, lineHeight: 1.75, color: 'var(--text-3)', pointerEvents: 'none', fontFamily: 'var(--font-ui)' },
 
   /* Font preview bar */

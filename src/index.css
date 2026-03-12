@@ -6,7 +6,8 @@
   /* The void — deep enough that surfaces read as floating objects */
   --bg:        #08090D;
   --bg-panel:  #0D0F15;
-  --bg-editor: transparent;
+  --bg-panel-secondary:  #14161d;
+  --bg-editor: #111319;
   --bg-raised: rgba(255,255,255,0.045);
   --bg-hover:  rgba(255,255,255,0.068);
   --bg-active: rgba(255,255,255,0.095);
@@ -58,7 +59,8 @@
   /* Cool neutral — harmonises with the blue accent */
   --bg:        #ECEEF3;
   --bg-panel:  linear-gradient(170deg, #EAECF4 0%, #DDE0EB 100%);
-  --bg-editor: rgba(255,255,255,0.82);
+  --bg-editor: rgba(242, 243, 247, 0.82);
+  --bg-panel-secondary: linear-gradient(170deg, #eaecf6 0%, #e9ecf7 100%);
   --bg-raised: rgba(0,0,0,0.04);
   --bg-hover:  rgba(0,0,0,0.07);
   --bg-active: rgba(0,0,0,0.10);
