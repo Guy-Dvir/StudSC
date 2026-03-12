@@ -54,10 +54,17 @@ const DRAFT_SCHEMA = {
   required: ['style', 'palette', 'mood', 'html'],
 }
 
-// SSE endpoint — streams each draft as it's ready
+// SSE endpoint — streams each draft as it's ready, saves progressively
 router.get('/generate', async (req, res) => {
   const prompt = req.query.prompt
   if (!prompt) return res.status(400).json({ error: 'Prompt is required' })
+
+  await fs.ensureDir(DRAFTS_DIR)
+  const id = randomUUID()
+  const sessionPath = join(DRAFTS_DIR, `${id}.json`)
+
+  const session = { id, prompt, generatedAt: new Date().toISOString(), status: 'generating', drafts: [] }
+  await fs.writeJson(sessionPath, session)
 
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -66,7 +73,8 @@ router.get('/generate', async (req, res) => {
 
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 
-  const drafts = []
+  send('session_created', { sessionId: id })
+
   const previousStyles = []
 
   try {
@@ -87,20 +95,19 @@ router.get('/generate', async (req, res) => {
         SINGLE_DRAFT_PROMPT(prompt, STYLES[i].direction, i, previousStyles)
       )
       const draft = JSON.parse(result.response.text())
-      drafts.push(draft)
+      session.drafts.push(draft)
       previousStyles.push(draft.style)
+      await fs.writeJson(sessionPath, session)
       send('draft_ready', { index: i, draft })
     }
 
-    // Auto-save the session
-    await fs.ensureDir(DRAFTS_DIR)
-    const id = randomUUID()
-    const session = { id, prompt, generatedAt: new Date().toISOString(), drafts }
-    await fs.writeJson(join(DRAFTS_DIR, `${id}.json`), session)
-
+    session.status = 'complete'
+    await fs.writeJson(sessionPath, session)
     send('done', { sessionId: id })
   } catch (err) {
     console.error('Draft generation error:', err)
+    session.status = 'error'
+    await fs.writeJson(sessionPath, session).catch(() => {})
     send('error', { message: err.message || 'Generation failed' })
   }
 
@@ -115,8 +122,12 @@ router.get('/history', async (req, res) => {
   for (const file of files) {
     if (!file.endsWith('.json')) continue
     try {
-      const { id, prompt, generatedAt, drafts } = await fs.readJson(join(DRAFTS_DIR, file))
-      sessions.push({ id, prompt, generatedAt, drafts: drafts.map(({ html: _html, ...meta }) => meta) })
+      const { id, prompt, generatedAt, status, drafts } = await fs.readJson(join(DRAFTS_DIR, file))
+      sessions.push({
+        id, prompt, generatedAt,
+        status: status || 'complete',
+        drafts: (drafts || []).map(({ html: _html, ...meta }) => meta),
+      })
     } catch (_) {}
   }
   res.json(sessions.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt)))

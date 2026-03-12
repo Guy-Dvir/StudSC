@@ -82,8 +82,13 @@ Aim for 150-250 words. Be specific to the business type — make intelligent ass
 Project: "${prompt}"
 
 Write ONLY the markdown content — no JSON, no preamble, no section title. Use ## subheaders, bullet lists, and bold labels.
-Cover: color palette (suggest 4-5 colors with hex values), typography direction, brand personality, tone of voice, visual style references.
-Aim for 150-250 words. Be specific to the business type — make intelligent assumptions.`,
+Cover:
+- **Typography**: ALWAYS specify exact Google Font names for headings (display font) and body text. Include font weights and fallback stacks. Example: "**Headings:** Playfair Display (700) · **Body:** Inter (400, 500)".
+- **Heading hierarchy**: Define the visual scale — H1 through H4 with approximate sizes, weights, and any letter-spacing or text-transform rules.
+- **Color palette**: Suggest 4-5 colors with hex values, including primary, secondary, accent, background, and text colors.
+- **Brand personality**: Tone of voice, adjectives that describe the brand feeling.
+- **Visual style references**: Mood, texture, imagery direction.
+Aim for 200-300 words. Be specific to the business type — make intelligent assumptions.`,
 
   'sitemap-structure': (prompt) => `You are an expert website strategist. Write the "Sitemap & Structure" section for this website plan.
 

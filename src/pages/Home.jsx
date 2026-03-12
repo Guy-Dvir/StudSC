@@ -27,9 +27,30 @@ export default function Home({ theme, onToggleTheme }) {
   const blinkTimeout  = useRef(null)
   const isDark = theme === 'dark'
 
+  const pollRef = useRef(null)
+
+  const refreshDrafts = useCallback(() => {
+    listDraftSessions().then(data => {
+      setDraftHistory(data)
+      const hasGenerating = data.some(d => d.status === 'generating')
+      if (hasGenerating && !pollRef.current) {
+        pollRef.current = setInterval(() => {
+          listDraftSessions().then(fresh => {
+            setDraftHistory(fresh)
+            if (!fresh.some(d => d.status === 'generating')) {
+              clearInterval(pollRef.current)
+              pollRef.current = null
+            }
+          }).catch(() => {})
+        }, 3000)
+      }
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     listPlans().then(setRecentPlans).catch(() => {})
-    listDraftSessions().then(setDraftHistory).catch(() => {})
+    refreshDrafts()
+    return () => { clearInterval(pollRef.current) }
   }, [])
 
   useEffect(() => () => { clearInterval(blinkRef.current); clearTimeout(blinkTimeout.current) }, [])
@@ -252,7 +273,11 @@ export default function Home({ theme, onToggleTheme }) {
                     ? <RecentDraftRow key={item.key} draft={item.data} onClick={async () => {
                         try {
                           const session = await getDraftSession(item.data.id)
-                          navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts } })
+                          if (item.data.status === 'generating') {
+                            navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts, resumeSessionId: session.id } })
+                          } else {
+                            navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts } })
+                          }
                         } catch (_) {
                           navigate('/quick-draft', { state: { prompt: item.data.prompt } })
                         }
@@ -311,6 +336,7 @@ function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder,
 /* ── RecentDraftRow ───────────────────────────────────────────── */
 function RecentDraftRow({ draft, onClick }) {
   const [hov, setHov] = useState(false)
+  const isGenerating = draft.status === 'generating'
   return (
     <motion.button
       style={{ ...s.recentRow, background: hov ? 'var(--bg-hover)' : 'transparent' }}
@@ -320,9 +346,19 @@ function RecentDraftRow({ draft, onClick }) {
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.12 }}
     >
-      <Zap size={10} color="var(--amber)" strokeWidth={2} style={{ flexShrink: 0, opacity: 0.7 }} />
-      <span style={s.recentName}>{draft.drafts?.[0]?.style ? `${draft.drafts[0].style} · ${draft.drafts[1]?.style} · ${draft.drafts[2]?.style}` : draft.prompt}</span>
-      <span style={s.recentTime}>{relativeTime(draft.generatedAt)}</span>
+      {isGenerating
+        ? <motion.div
+            style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--amber)', flexShrink: 0 }}
+            animate={{ opacity: [0.4, 1, 0.4], scale: [0.85, 1.15, 0.85] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
+          />
+        : <Zap size={10} color="var(--amber)" strokeWidth={2} style={{ flexShrink: 0, opacity: 0.7 }} />
+      }
+      <span style={s.recentName}>{draft.prompt || 'Untitled draft'}</span>
+      {isGenerating
+        ? <span style={{ ...s.recentTime, color: 'var(--amber)' }}>{draft.drafts?.length || 0}/3 generating…</span>
+        : <span style={s.recentTime}>{relativeTime(draft.generatedAt)}</span>
+      }
       <ArrowRight size={12} color="var(--text-3)" strokeWidth={1.8}
         style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }} />
     </motion.button>

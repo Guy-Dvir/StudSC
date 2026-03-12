@@ -1,9 +1,12 @@
 const BASE = '/api'
 
-export function streamDrafts(prompt, { onDraftStart, onDraftReady, onDone, onError }) {
+export function streamDrafts(prompt, { onSessionCreated, onDraftStart, onDraftReady, onDone, onError }) {
   const url = `${BASE}/drafts/generate?prompt=${encodeURIComponent(prompt)}`
   const source = new EventSource(url)
 
+  source.addEventListener('session_created', (e) => {
+    onSessionCreated?.(JSON.parse(e.data))
+  })
   source.addEventListener('draft_start', (e) => {
     onDraftStart?.(JSON.parse(e.data))
   })

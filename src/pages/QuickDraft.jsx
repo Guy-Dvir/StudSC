@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, RefreshCw, Expand, Code2, Download, X, Zap, ArrowRight } from 'lucide-react'
-import { streamDrafts } from '../lib/api.js'
+import { streamDrafts, getDraftSession } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const ease = [0.22, 1, 0.36, 1]
@@ -21,9 +21,41 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const cleanupRef = useRef(null)
 
   useEffect(() => {
-    if (!state?.drafts?.length && genPrompt) generate(genPrompt)
+    if (state?.resumeSessionId) {
+      resumeSession(state.resumeSessionId)
+    } else if (!state?.drafts?.length && genPrompt) {
+      generate(genPrompt)
+    }
     return () => cleanupRef.current?.()
   }, [])
+
+  function resumeSession(sessionId) {
+    setLoading(true)
+    const slots = [true, true, true]
+    if (state?.drafts) {
+      state.drafts.forEach((d, i) => { if (d) slots[i] = false })
+    }
+    setLoadingSlots(slots)
+
+    const poll = setInterval(async () => {
+      try {
+        const session = await getDraftSession(sessionId)
+        setDrafts(session.drafts || [])
+        const newSlots = [true, true, true]
+        ;(session.drafts || []).forEach((_, i) => { newSlots[i] = false })
+        setLoadingSlots(newSlots)
+        if (session.status !== 'generating') {
+          clearInterval(poll)
+          setLoading(false)
+          setLoadingSlots([false, false, false])
+        }
+      } catch (_) {
+        clearInterval(poll)
+        setLoading(false)
+      }
+    }, 2000)
+    cleanupRef.current = () => clearInterval(poll)
+  }
 
   function generate(p) {
     cleanupRef.current?.()
