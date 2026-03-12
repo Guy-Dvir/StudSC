@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Zap, Map, ArrowRight } from 'lucide-react'
+import { Zap, Map, ArrowRight, Paperclip, X } from 'lucide-react'
 import ThemeToggle from '../components/ThemeToggle.jsx'
-import { listPlans } from '../lib/api.js'
+import { listPlans, listDraftSessions, getDraftSession, createPlan } from '../lib/api.js'
 
 const ease = [0.22, 1, 0.36, 1]
 const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } }
@@ -12,11 +12,72 @@ const up = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition
 export default function Home({ theme, onToggleTheme }) {
   const navigate  = useNavigate()
   const [prompt,  setPrompt]  = useState('')
-  const [recentPlans, setRecentPlans] = useState([])
+  const [recentPlans,  setRecentPlans]  = useState([])
+  const [draftHistory, setDraftHistory] = useState([])
+  const [taFocused,    setTaFocused]   = useState(false)
+  const [showAllDrafts, setShowAllDrafts] = useState(false)
+  const [creatingPlan, setCreatingPlan] = useState(false)
+  const [attachments, setAttachments] = useState([])
+  const fileInputRef = useRef(null)
+  const [glowPos,      setGlowPos]     = useState(null)
+  const [caretVisible, setCaretVisible] = useState(true)
+  const taRef         = useRef(null)
+  const promptWrapRef = useRef(null)
+  const blinkRef      = useRef(null)
+  const blinkTimeout  = useRef(null)
+  const isDark = theme === 'dark'
 
   useEffect(() => {
     listPlans().then(setRecentPlans).catch(() => {})
+    listDraftSessions().then(setDraftHistory).catch(() => {})
   }, [])
+
+  useEffect(() => () => { clearInterval(blinkRef.current); clearTimeout(blinkTimeout.current) }, [])
+
+  const updateGlow = useCallback(() => {
+    const ta   = taRef.current
+    const wrap = promptWrapRef.current
+    if (!ta || !wrap) return
+    const cs     = window.getComputedStyle(ta)
+    const taRect = ta.getBoundingClientRect()
+    const m = document.createElement('div')
+    m.style.cssText = [
+      'position:fixed', `top:${taRect.top}px`, `left:${taRect.left}px`,
+      `width:${taRect.width}px`, `padding:${cs.padding}`,
+      `font-family:${cs.fontFamily}`, `font-size:${cs.fontSize}`,
+      `line-height:${cs.lineHeight}`, `letter-spacing:${cs.letterSpacing}`,
+      'white-space:pre-wrap', 'word-wrap:break-word',
+      'box-sizing:border-box', 'overflow:hidden',
+      'visibility:hidden', 'pointer-events:none',
+    ].join(';')
+    m.appendChild(document.createTextNode(ta.value.substring(0, ta.selectionStart)))
+    const mark = document.createElement('span')
+    mark.textContent = '\u200b'
+    m.appendChild(mark)
+    document.body.appendChild(m)
+    const mr   = mark.getBoundingClientRect()
+    const wr   = wrap.getBoundingClientRect()
+    const lh   = parseFloat(cs.lineHeight) || 24
+    document.body.removeChild(m)
+    setGlowPos({ x: mr.left - wr.left, y: mr.top - wr.top + lh * 0.35 })
+  }, [])
+
+  const stopBlink = useCallback(() => {
+    clearInterval(blinkRef.current)
+    clearTimeout(blinkTimeout.current)
+    blinkRef.current = null
+    blinkTimeout.current = null
+  }, [])
+
+  const startBlink = useCallback(() => {
+    stopBlink()
+    setCaretVisible(true)
+    blinkTimeout.current = setTimeout(() => {
+      blinkRef.current = setInterval(() => {
+        setCaretVisible(v => !v)
+      }, 530)
+    }, 530)
+  }, [stopBlink])
 
   function deriveName(p) {
     const words = p.trim().split(/\s+/).slice(0, 6).join(' ')
@@ -28,10 +89,16 @@ export default function Home({ theme, onToggleTheme }) {
     navigate('/quick-draft', { state: { prompt: prompt.trim() } })
   }
 
-  function handlePlan() {
-    if (!prompt.trim()) return
-    const name = deriveName(prompt)
-    navigate('/plan/new', { state: { prompt: prompt.trim(), name } })
+  async function handlePlan() {
+    if (!prompt.trim() || creatingPlan) return
+    setCreatingPlan(true)
+    try {
+      const name = deriveName(prompt)
+      const data = await createPlan(name, prompt.trim())
+      navigate(`/plan/${data.id}`, { state: { autoGenerate: true } })
+    } catch (err) {
+      setCreatingPlan(false)
+    }
   }
 
   const hasPrompt = prompt.trim().length > 0
@@ -43,7 +110,7 @@ export default function Home({ theme, onToggleTheme }) {
       {/* Nav */}
       <motion.nav style={s.nav} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.7 }}>
         <div style={s.logo}>
-          <span style={s.logoText}>Site Creation</span>
+          <span style={s.logoText}>Wix Studio | Site Creation</span>
         </div>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
       </motion.nav>
@@ -57,23 +124,91 @@ export default function Home({ theme, onToggleTheme }) {
         </motion.h1>
 
         {/* Prompt card with inline CTAs */}
-        <motion.div variants={up} style={s.promptWrap}>
+        <motion.div
+          ref={promptWrapRef}
+          variants={up}
+          style={{
+            ...s.promptWrap,
+            boxShadow: taFocused
+              ? `var(--shadow-lg), 0 0 0 1px rgba(90,132,166,0.30), 0 0 52px rgba(90,132,166,0.10)`
+              : 'var(--shadow-lg)',
+            transition: 'box-shadow 0.4s var(--ease-out)',
+          }}
+        >
+          {/* Cursor glow + fake caret */}
+          {taFocused && glowPos && (
+            <div style={{ position: 'absolute', pointerEvents: 'none', zIndex: 0, opacity: caretVisible ? 1 : 0 }}>
+              {/* Directional cone — dark only */}
+              {isDark && (
+                <div style={{
+                  position: 'absolute',
+                  left: glowPos.x - 5, top: glowPos.y - 22,
+                  width: 160, height: 40,
+                  background: 'radial-gradient(ellipse 10% 80% at 3% 50%, rgba(210,215,255,0.95) 0%, rgba(170,180,255,0.65) 12%, rgba(130,148,255,0.28) 38%, transparent 62%)',
+                  filter: 'blur(4px)',
+                }} />
+              )}
+              {/* Fake caret — raised neumorphic in light, glow in dark */}
+              <div style={{
+                position: 'absolute',
+                left: glowPos.x - 0.5, top: glowPos.y - 10,
+                width: 2, height: 17,
+                background: isDark ? 'rgba(220,225,255,0.95)' : '#4A7BD4',
+                borderRadius: 1,
+                boxShadow: isDark
+                  ? 'none'
+                  : '-1px -1px 3px rgba(255,255,255,0.92), 1px 1px 4px rgba(0,0,0,0.18)',
+              }} />
+            </div>
+          )}
+
           <textarea
+            ref={taRef}
             value={prompt}
             placeholder="Describe the business, project or idea — e.g. A luxury spa in Miami targeting busy professionals who crave weekend escapes…"
             rows={4}
-            style={s.promptTA}
+            style={{ ...s.promptTA, position: 'relative', zIndex: 1, caretColor: taFocused ? 'transparent' : undefined }}
+            onFocus={() => { setTaFocused(true); updateGlow(); startBlink() }}
+            onBlur={() => { setTaFocused(false); stopBlink(); setCaretVisible(true) }}
+            onKeyUp={updateGlow}
+            onClick={updateGlow}
             onChange={e => {
               setPrompt(e.target.value)
               e.target.style.height = 'auto'
               e.target.style.height = Math.min(e.target.scrollHeight, 220) + 'px'
+              updateGlow()
+              startBlink()
             }}
           />
           <div style={s.promptFooter}>
-            {prompt.length > 0
-              ? <span style={s.charCount}>{prompt.length} chars</span>
-              : <span style={s.promptHint}>Describe your project, then choose a flow</span>
-            }
+            <div style={s.attachArea}>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,.pdf,.txt,.md,.doc,.docx"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const files = Array.from(e.target.files)
+                  setAttachments(prev => {
+                    const existing = new Set(prev.map(f => f.name))
+                    return [...prev, ...files.filter(f => !existing.has(f.name))]
+                  })
+                  e.target.value = ''
+                }}
+              />
+              <button style={s.attachBtn} onClick={() => fileInputRef.current?.click()} title="Attach files">
+                <Paperclip size={14} strokeWidth={2} />
+              </button>
+              {attachments.map(f => (
+                <span key={f.name} style={s.attachChip}>
+                  <span style={s.attachChipName}>{f.name}</span>
+                  <button style={s.attachChipRemove} onClick={() => setAttachments(prev => prev.filter(a => a.name !== f.name))}>
+                    <X size={10} strokeWidth={2.5} />
+                  </button>
+                </span>
+              ))}
+            </div>
             <div style={s.ctaRow}>
               <ActionBtn
                 icon={Zap}
@@ -86,7 +221,7 @@ export default function Home({ theme, onToggleTheme }) {
               />
               <ActionBtn
                 icon={Map}
-                label="Plan Mode"
+                label="Deep Planning"
                 active={hasPrompt}
                 accent="rgba(140,135,190,1)"
                 accentDim="rgba(140,135,190,0.10)"
@@ -97,16 +232,45 @@ export default function Home({ theme, onToggleTheme }) {
           </div>
         </motion.div>
 
-        {/* Recent plans */}
-        {recentPlans.length > 0 && (
-          <motion.div variants={up} style={s.recentWrap}>
-            <div style={s.recentList}>
-              {recentPlans.map(plan => (
-                <RecentPlanRow key={plan.id} plan={plan} onClick={() => navigate(`/plan/${plan.id}`)} />
-              ))}
-            </div>
-          </motion.div>
-        )}
+        {/* Recent activity */}
+        {(recentPlans.length > 0 || draftHistory.length > 0) && (() => {
+          const allItems = [
+            ...draftHistory.map(d => ({ type: 'draft', data: d, key: d.id })),
+            ...recentPlans.map(p => ({ type: 'plan', data: p, key: p.id })),
+          ]
+          const LIMIT = 5
+          const visible = showAllDrafts ? allItems : allItems.slice(0, LIMIT)
+          const hasMore = allItems.length > LIMIT
+          return (
+            <motion.div variants={up} style={s.recentWrap}>
+              <div style={s.recentHeader}>
+                <span style={s.recentTitle}>Previous Drafts</span>
+              </div>
+              <div style={s.recentList}>
+                {visible.map(item =>
+                  item.type === 'draft'
+                    ? <RecentDraftRow key={item.key} draft={item.data} onClick={async () => {
+                        try {
+                          const session = await getDraftSession(item.data.id)
+                          navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts } })
+                        } catch (_) {
+                          navigate('/quick-draft', { state: { prompt: item.data.prompt } })
+                        }
+                      }} />
+                    : <RecentPlanRow  key={item.key} plan={item.data}  onClick={() => navigate(`/plan/${item.data.id}`)} />
+                )}
+              </div>
+              {hasMore && (
+                <button
+                  onClick={() => setShowAllDrafts(v => !v)}
+                  style={s.showMoreBtn}
+                >
+                  {showAllDrafts ? '↑ Show less' : `↓ Show ${allItems.length - LIMIT} more`}
+                </button>
+              )}
+            </motion.div>
+          )
+        })()}
 
       </motion.section>
     </div>
@@ -124,6 +288,7 @@ function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder,
         ...s.actionBtn,
         background: lit ? accentDim : 'var(--bg-raised)',
         borderColor: lit ? accentBorder : 'var(--border)',
+        boxShadow: lit ? `0 0 18px ${accentDim}, 0 0 6px ${accentDim}` : 'none',
         opacity: active ? 1 : 0.45,
         cursor: active ? 'pointer' : 'default',
       }}
@@ -139,6 +304,27 @@ function ActionBtn({ icon: Icon, label, active, accent, accentDim, accentBorder,
       <motion.div animate={{ x: lit ? 2 : 0 }} transition={{ duration: 0.15 }}>
         <ArrowRight size={13} color={lit ? accent : 'var(--text-3)'} strokeWidth={1.8} />
       </motion.div>
+    </motion.button>
+  )
+}
+
+/* ── RecentDraftRow ───────────────────────────────────────────── */
+function RecentDraftRow({ draft, onClick }) {
+  const [hov, setHov] = useState(false)
+  return (
+    <motion.button
+      style={{ ...s.recentRow, background: hov ? 'var(--bg-hover)' : 'transparent' }}
+      onHoverStart={() => setHov(true)}
+      onHoverEnd={() => setHov(false)}
+      onClick={onClick}
+      whileTap={{ scale: 0.99 }}
+      transition={{ duration: 0.12 }}
+    >
+      <Zap size={10} color="var(--amber)" strokeWidth={2} style={{ flexShrink: 0, opacity: 0.7 }} />
+      <span style={s.recentName}>{draft.drafts?.[0]?.style ? `${draft.drafts[0].style} · ${draft.drafts[1]?.style} · ${draft.drafts[2]?.style}` : draft.prompt}</span>
+      <span style={s.recentTime}>{relativeTime(draft.generatedAt)}</span>
+      <ArrowRight size={12} color="var(--text-3)" strokeWidth={1.8}
+        style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s', flexShrink: 0 }} />
     </motion.button>
   )
 }
@@ -167,7 +353,7 @@ function RecentPlanRow({ plan, onClick }) {
       whileTap={{ scale: 0.99 }}
       transition={{ duration: 0.12 }}
     >
-      <span style={s.recentDot} />
+      <Map size={10} color="var(--text-3)" strokeWidth={1.8} style={{ flexShrink: 0, opacity: 0.7 }} />
       <span style={s.recentName}>{plan.name || 'Untitled plan'}</span>
       <span style={s.recentTime}>{relativeTime(plan.createdAt)}</span>
       <ArrowRight size={12} color="var(--text-3)" strokeWidth={1.8}
@@ -180,11 +366,11 @@ function RecentPlanRow({ plan, onClick }) {
 function Orbs() {
   return (
     <div style={s.orbRoot} aria-hidden>
-      <motion.div style={{ ...s.orb, width: 560, height: 560, background: 'var(--orb-1)', top: '-160px', right: '-80px' }}
+      <motion.div style={{ ...s.orb, width: 720, height: 720, background: 'var(--orb-1)', top: '-240px', right: '-120px' }}
         animate={{ x: [0,24,-14,0], y: [0,-18,12,0] }}
         transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
       />
-      <motion.div style={{ ...s.orb, width: 400, height: 400, background: 'var(--orb-2)', bottom: '-80px', left: '-60px' }}
+      <motion.div style={{ ...s.orb, width: 560, height: 560, background: 'var(--orb-2)', bottom: '-120px', left: '-80px' }}
         animate={{ x: [0,-18,12,0], y: [0,16,-10,0] }}
         transition={{ duration: 24, repeat: Infinity, ease: 'easeInOut', delay: 5 }}
       />
@@ -201,7 +387,7 @@ const s = {
     position: 'relative', overflow: 'hidden',
   },
   orbRoot: { position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 0, overflow: 'hidden' },
-  orb: { position: 'absolute', borderRadius: '50%', filter: 'blur(90px)' },
+  orb: { position: 'absolute', borderRadius: '50%', filter: 'blur(120px)' },
 
   nav: {
     width: '100%', maxWidth: 760,
@@ -230,11 +416,13 @@ const s = {
 
   /* Prompt card */
   promptWrap: {
+    position: 'relative',
     background: 'var(--bg-card)',
     border: '1px solid var(--border-mid)',
     borderRadius: 'var(--r-xl)',
     overflow: 'hidden',
-    boxShadow: 'var(--shadow-lg)',
+    backdropFilter: 'var(--glass)',
+    WebkitBackdropFilter: 'var(--glass)',
     display: 'flex', flexDirection: 'column',
   },
   promptTA: {
@@ -252,7 +440,11 @@ const s = {
     background: 'var(--bg-raised)',
     gap: 12,
   },
-  promptHint: { fontSize: 11.5, color: 'var(--text-3)', flex: 1 },
+  attachArea: { display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, flexWrap: 'wrap' },
+  attachBtn: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 28, height: 28, borderRadius: 8, border: '1px solid var(--border)', background: 'none', cursor: 'pointer', color: 'var(--text-3)', flexShrink: 0, transition: 'color 0.15s, border-color 0.15s' },
+  attachChip: { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 6px 2px 8px', borderRadius: 100, background: 'var(--bg-elevated)', border: '1px solid var(--border)', fontSize: 11, color: 'var(--text-2)', maxWidth: 160 },
+  attachChipName: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-ui)' },
+  attachChipRemove: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', padding: 0, flexShrink: 0 },
   charCount: { fontSize: 11, color: 'var(--text-3)', fontFamily: 'var(--font-mono)', flex: 1 },
 
   /* Action buttons */
@@ -271,11 +463,27 @@ const s = {
   footer: { fontSize: 11.5, color: 'var(--text-3)', marginTop: 'auto', paddingTop: 40, position: 'relative', zIndex: 1 },
 
   /* Recent plans */
-  recentWrap: { display: 'flex', flexDirection: 'column', marginTop: 4 },
-  recentList: { display: 'flex', flexDirection: 'column', gap: 1 },
+  recentWrap: {
+    display: 'flex', flexDirection: 'column',
+    background: 'var(--bg-raised)',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--r-xl)',
+    overflow: 'hidden',
+  },
+  recentHeader: {
+    padding: '10px 16px 6px',
+    borderBottom: '1px solid var(--border)',
+  },
+  recentTitle: {
+    fontSize: 10.5, fontWeight: 600, letterSpacing: '0.09em',
+    textTransform: 'uppercase', color: 'var(--text-3)',
+    fontFamily: 'var(--font-ui)',
+  },
+  recentList: { display: 'flex', flexDirection: 'column', padding: '6px 8px 8px' },
+  showMoreBtn: { display: 'block', width: '100%', padding: '7px 0', fontSize: 12, color: 'var(--text-3)', background: 'none', border: 'none', borderTop: '1px solid var(--border)', cursor: 'pointer', fontFamily: 'var(--font-ui)', letterSpacing: '0.03em' },
   recentRow: {
     display: 'flex', alignItems: 'center', gap: 10,
-    padding: '7px 10px',
+    padding: '8px 10px',
     borderRadius: 'var(--r)',
     cursor: 'pointer',
     fontFamily: 'var(--font-ui)',

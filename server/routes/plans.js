@@ -11,12 +11,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const PLANS_DIR = join(__dirname, '../../plans')
 
 const SECTIONS = [
-  { id: 'brand-theme', label: 'Brand & Theme', emoji: '🎨' },
   { id: 'goals-brief', label: 'Goals & Brief', emoji: '🎯' },
+  { id: 'brand-theme', label: 'Brand & Theme', emoji: '🎨' },
   { id: 'sitemap-structure', label: 'Sitemap & Structure', emoji: '🗺️' },
-  { id: 'integrations', label: 'Apps & Integrations', emoji: '🔌' },
-  { id: 'content-inventory', label: 'Content Inventory', emoji: '📦' },
-  { id: 'inspiration', label: 'Inspiration & References', emoji: '✨' },
 ]
 
 const storage = multer.diskStorage({
@@ -71,30 +68,31 @@ router.get('/', async (req, res) => {
   res.json(plans.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)))
 })
 
-const PLAN_GEN_PROMPT = (prompt) => `You are an expert website strategist and planner working for a web agency.
+const SECTION_PROMPTS = {
+  'goals-brief': (prompt) => `You are an expert website strategist. Write the "Goals & Brief" section for this website plan.
 
-Based on the following project description, generate a thorough, specific website plan.
+Project: "${prompt}"
 
-Project description: "${prompt}"
+Write ONLY the markdown content — no JSON, no preamble, no section title. Use ## subheaders, bullet lists, and bold labels.
+Cover: business objectives, primary/secondary website goals, target audience breakdown, success metrics/KPIs, project constraints.
+Aim for 150-250 words. Be specific to the business type — make intelligent assumptions.`,
 
-Return ONLY valid JSON (no markdown fences, no explanation) with exactly these keys:
-{
-  "brand-theme": "...",
-  "goals-brief": "...",
-  "sitemap-structure": "...",
-  "integrations": "...",
-  "content-inventory": "...",
-  "inspiration": "..."
+  'brand-theme': (prompt) => `You are an expert website strategist. Write the "Brand & Theme" section for this website plan.
+
+Project: "${prompt}"
+
+Write ONLY the markdown content — no JSON, no preamble, no section title. Use ## subheaders, bullet lists, and bold labels.
+Cover: color palette (suggest 4-5 colors with hex values), typography direction, brand personality, tone of voice, visual style references.
+Aim for 150-250 words. Be specific to the business type — make intelligent assumptions.`,
+
+  'sitemap-structure': (prompt) => `You are an expert website strategist. Write the "Sitemap & Structure" section for this website plan.
+
+Project: "${prompt}"
+
+Write ONLY the markdown content — no JSON, no preamble, no section title. Use ## subheaders, nested bullet lists for hierarchy, and bold labels.
+Cover: full page list with hierarchy, main navigation structure, 2-3 key user flows, page-level notes.
+Aim for 150-250 words. Be specific to the business type — make intelligent assumptions.`,
 }
-
-For each key, write detailed markdown content (use ## headers, bullet lists, bold labels). Be specific to the business type — make intelligent assumptions. Aim for 150-250 words per section.
-
-brand-theme: Visual identity — color palette suggestions (with hex values), typography direction, brand personality, tone of voice, visual references.
-goals-brief: Business objectives, primary/secondary goals for the website, target audience breakdown, success metrics/KPIs, project constraints.
-sitemap-structure: Full page list with hierarchy, main navigation structure, key user flows (2-3 flows), page-level notes.
-integrations: All likely third-party tools — CRM, booking, payments, forms, analytics, live chat, social feeds, email marketing. Note which are essential vs nice-to-have.
-content-inventory: Content that needs to be created or gathered — copy sections per page, image types needed, existing assets to collect, video/media needs.
-inspiration: Design direction references, competitor sites to study, visual mood description, what to avoid, 3-5 specific aesthetic references.`
 
 // Create a new plan
 router.post('/', async (req, res) => {
@@ -137,31 +135,20 @@ router.get('/:id/generate', async (req, res) => {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
     const model = genAI.getGenerativeModel({ model: 'gemini-3-flash-preview' })
 
-    const result = await model.generateContentStream(PLAN_GEN_PROMPT(meta.initialPrompt))
-
-    let fullText = ''
-    const appearing = new Set()
-
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text()
-      fullText += chunkText
-      // Detect section keys appearing in the stream
-      for (const section of SECTIONS) {
-        if (!appearing.has(section.id) && fullText.includes(`"${section.id}"`)) {
-          appearing.add(section.id)
-          send('section_start', { id: section.id })
-        }
-      }
-    }
-
-    const cleaned = fullText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-    const generated = JSON.parse(cleaned)
-
     for (const section of SECTIONS) {
-      if (generated[section.id]) {
-        await fs.writeFile(join(dir, `${section.id}.md`), generated[section.id])
-        send('section_done', { id: section.id, content: generated[section.id] })
+      send('section_start', { id: section.id })
+
+      const result = await model.generateContentStream(SECTION_PROMPTS[section.id](meta.initialPrompt))
+      let fullContent = ''
+
+      for await (const chunk of result.stream) {
+        const text = chunk.text()
+        fullContent += text
+        send('section_chunk', { id: section.id, chunk: text })
       }
+
+      await fs.writeFile(join(dir, `${section.id}.md`), fullContent)
+      send('section_done', { id: section.id, content: fullContent })
     }
 
     send('done', {})

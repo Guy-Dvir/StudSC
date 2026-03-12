@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RefreshCw, Expand, Code2, Download, X } from 'lucide-react'
-import { generateDrafts } from '../lib/api.js'
+import { ArrowLeft, RefreshCw, Expand, X, Zap, ArrowRight } from 'lucide-react'
+import { generateDrafts, saveDraftSession } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 
 const ease = [0.22, 1, 0.36, 1]
@@ -13,6 +13,7 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const [drafts,   setDrafts]   = useState(state?.drafts || [])
   const [prompt,   setPrompt]   = useState(state?.prompt || '')
   const [loading,  setLoading]  = useState(!state?.drafts?.length && !!state?.prompt)
+  const [regenerating, setRegenerating] = useState(false)
   const [error,    setError]    = useState('')
   const [expanded, setExpanded] = useState(null)
   const [showCode, setShowCode] = useState(null)
@@ -28,11 +29,24 @@ export default function QuickDraft({ theme, onToggleTheme }) {
       if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
       setDrafts(d)
       setExpanded(null); setShowCode(null)
+      saveDraftSession(p, d).catch(() => {})
     } catch (err) { setError(err.message) }
     finally { setLoading(false) }
   }
 
-  async function regenerate() { await generate(prompt) }
+  async function regenerate() {
+    setRegenerating(true); setError('')
+    try {
+      const { drafts: d } = await generateDrafts(prompt)
+      if (!Array.isArray(d) || d.length === 0) throw new Error('No drafts returned')
+      setDrafts(prev => {
+        const updated = [...prev, ...d]
+        saveDraftSession(prompt, updated).catch(() => {})
+        return updated
+      })
+    } catch (err) { setError(err.message) }
+    finally { setRegenerating(false) }
+  }
 
   function download(draft) {
     const blob = new Blob([draft.html], { type: 'text/html' })
@@ -50,11 +64,11 @@ export default function QuickDraft({ theme, onToggleTheme }) {
         </button>
         <div style={s.promptChip}>
           <span style={s.chipText}>{prompt}</span>
-          <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading} style={{ flexShrink: 0 }}>
-            <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
+          <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading || regenerating} style={{ flexShrink: 0 }}>
+            <motion.span animate={regenerating ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: regenerating ? Infinity : 0, ease: 'linear' }}>
               <RefreshCw size={12} />
             </motion.span>
-            {loading ? 'Regenerating…' : 'Regenerate'}
+            {regenerating ? 'Regenerating…' : 'Regenerate'}
           </button>
         </div>
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -66,6 +80,9 @@ export default function QuickDraft({ theme, onToggleTheme }) {
 
       {/* Grid */}
       <div style={s.body}>
+        {!loading && drafts.length > 0 && (
+          <div style={s.gridTitle}>Homepage Drafts</div>
+        )}
         <AnimatePresence mode="wait">
           {loading ? (
             <motion.div key="sk" style={s.grid} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -88,9 +105,15 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                   <DraftCard
                     draft={d} index={i}
                     onExpand={() => setExpanded(i)}
-                    onCode={() => setShowCode(i)}
                     onDownload={() => download(d)}
+                    onGenerateSite={() => download(d)}
+                    onGoToEditor={() => setShowCode(i)}
                   />
+                </motion.div>
+              ))}
+              {regenerating && [0,1,2].map(i => (
+                <motion.div key={`regen-sk-${i}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease, delay: i * 0.08 }}>
+                  <DraftSkeleton index={i} />
                 </motion.div>
               ))}
             </motion.div>
@@ -109,9 +132,13 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                   <strong style={s.modalTitle}>{drafts[expanded]?.style}</strong>
                   <span style={s.modalSub}>{drafts[expanded]?.palette}</span>
                 </div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setShowCode(expanded); setExpanded(null) }}><Code2 size={12} /> Code</button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => download(drafts[expanded])}><Download size={12} /></button>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowCode(expanded)}>
+                    <ArrowRight size={13} /> Go to Editor
+                  </button>
+                  <button className="btn btn-primary btn-sm" onClick={() => download(drafts[expanded])}>
+                    <Zap size={13} /> Generate Full Site
+                  </button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setExpanded(null)}><X size={14} /></button>
                 </div>
               </div>
@@ -162,8 +189,7 @@ function DraftSkeleton({ index }) {
   }, [])
 
   return (
-    <div style={{ ...s.card, position: 'relative', overflow: 'hidden', borderTopColor: accent, borderTopWidth: 2 }}>
-      {/* Shimmer sweep */}
+    <div style={{ ...s.card, position: 'relative', overflow: 'hidden' }}>
       <motion.div
         style={{
           position: 'absolute', inset: 0, zIndex: 1, pointerEvents: 'none',
@@ -173,18 +199,16 @@ function DraftSkeleton({ index }) {
         transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut', delay: index * 0.55 }}
       />
 
-      <div style={s.cardLine} />
-
       <div style={s.cardHead}>
         <div style={s.cardMeta}>
-          <span style={{ ...s.cardNum, color: accent }}>0{index + 1}</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <Shimmer width={90} height={11} accent={accent} />
             <Shimmer width={60} height={9} accent={accent} delay={0.1} />
           </div>
         </div>
-        <div style={s.acts}>
-          {[0,1,2].map(i => <div key={i} style={{ width: 26, height: 26, borderRadius: 6, background: 'var(--bg-raised)' }} />)}
+        <div style={s.cardActions}>
+          <Shimmer width={110} height={28} accent={accent} delay={0.05} />
+          <Shimmer width={130} height={28} accent={accent} delay={0.1} />
         </div>
       </div>
 
@@ -241,7 +265,7 @@ const ACCENTS = [
   { color: '#A09BCC', glow: 'rgba(160,155,204,0.25)' },
 ]
 
-function DraftCard({ draft, index, onExpand, onCode, onDownload }) {
+function DraftCard({ draft, index, onExpand, onDownload, onGenerateSite, onGoToEditor }) {
   const [hov, setHov] = useState(false)
   const ac = ACCENTS[index % 3]
 
@@ -255,22 +279,20 @@ function DraftCard({ draft, index, onExpand, onCode, onDownload }) {
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
     >
-      <div style={{ ...s.cardLine, background: ac.color }} />
       <div style={s.cardHead}>
         <div style={s.cardMeta}>
           <span style={{ ...s.cardNum, color: ac.color }}>0{index + 1}</span>
-          <div>
-            <div style={s.cardStyle}>{draft.style}</div>
-            <div style={s.cardPalette}>{draft.palette}</div>
-          </div>
+          <div style={s.cardStyle}>{draft.style}</div>
         </div>
-        <div style={s.acts}>
-          <button className="btn btn-ghost btn-xs" onClick={onCode}><Code2 size={11} /></button>
-          <button className="btn btn-ghost btn-xs" onClick={onDownload}><Download size={11} /></button>
-          <button className="btn btn-ghost btn-xs" onClick={onExpand}><Expand size={11} /></button>
+        <div style={s.cardActions}>
+          <button className="btn btn-ghost" onClick={onGoToEditor} style={s.cardBtn}>
+            <ArrowRight size={10} /> Go to Editor
+          </button>
+          <button className="btn btn-primary" onClick={onGenerateSite} style={s.cardBtn}>
+            <Zap size={10} /> Generate Full Site
+          </button>
         </div>
       </div>
-      {draft.mood && <p style={s.cardMood}>{draft.mood}</p>}
 
       <div style={s.preview} onClick={onExpand}>
         <iframe
@@ -286,7 +308,7 @@ function DraftCard({ draft, index, onExpand, onCode, onDownload }) {
           animate={{ opacity: hov ? 1 : 0 }}
           transition={{ duration: 0.22 }}
         >
-          <span style={s.expandBadge}><Expand size={13} /> Expand</span>
+          <span style={s.expandBadge}><Expand size={13} /> View Expanded</span>
         </motion.div>
       </div>
     </div>
@@ -343,6 +365,7 @@ const s = {
   },
 
   body: { flex: 1, padding: '32px 28px' },
+  gridTitle: { fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'var(--font-ui)', marginBottom: 16 },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22 },
   card: {
     background: 'var(--bg-card)',
@@ -352,17 +375,17 @@ const s = {
     display: 'flex', flexDirection: 'column',
     backdropFilter: 'blur(12px)',
     transition: 'box-shadow 0.3s ease',
+    position: 'relative',
   },
   cardLine: { height: 2, flexShrink: 0 },
-  cardHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '14px 16px 6px', gap: 8 },
-  cardMeta: { display: 'flex', alignItems: 'flex-start', gap: 10 },
+  cardHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '14px 16px 10px', gap: 12 },
+  cardMeta: { display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 },
   cardNum: { fontFamily: 'var(--font-display)', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', paddingTop: 2, flexShrink: 0 },
   cardStyle: { fontSize: 14, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.01em' },
-  cardPalette: { fontSize: 11, color: 'var(--text-3)', marginTop: 2 },
-  acts: { display: 'flex', gap: 4, flexShrink: 0 },
-  cardMood: { fontSize: 12, color: 'var(--text-2)', fontStyle: 'italic', padding: '0 16px 8px', lineHeight: 1.5 },
+  cardActions: { display: 'flex', gap: 5, flexShrink: 0, alignItems: 'center' },
+  cardBtn: { fontSize: 10, padding: '6px 8px', gap: 4, lineHeight: 1 },
 
-  preview: { position: 'relative', cursor: 'pointer', borderTop: '1px solid var(--border)', height: 390, overflow: 'hidden' },
+  preview: { position: 'relative', cursor: 'pointer', borderTop: '1px solid var(--border)', height: '65vh', overflow: 'hidden' },
   iframe: { width: '200%', height: '200%', border: 'none', transform: 'scale(0.5)', transformOrigin: 'top left', pointerEvents: 'none', background: '#fff' },
   previewOverlay: {
     position: 'absolute', inset: 0,

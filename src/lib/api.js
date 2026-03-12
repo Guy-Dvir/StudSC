@@ -62,3 +62,25 @@ export async function listPlans() {
   if (!res.ok) throw new Error('Failed to load plans')
   return res.json()
 }
+
+export async function listDraftSessions() {
+  const res = await fetch(`${BASE}/drafts/history`)
+  if (!res.ok) throw new Error('Failed to load draft history')
+  return res.json()
+}
+
+export async function saveDraftSession(prompt, drafts) {
+  const res = await fetch(`${BASE}/drafts/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt, drafts }),
+  })
+  if (!res.ok) throw new Error('Failed to save draft session')
+  return res.json()
+}
+
+export async function getDraftSession(id) {
+  const res = await fetch(`${BASE}/drafts/history/${id}`)
+  if (!res.ok) throw new Error('Draft session not found')
+  return res.json()
+}
