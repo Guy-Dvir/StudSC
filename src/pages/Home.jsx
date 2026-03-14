@@ -143,8 +143,7 @@ export default function Home({ theme, onToggleTheme }) {
       <motion.section style={s.center} variants={stagger} initial="hidden" animate="show">
 
         <motion.h1 variants={up} style={s.headline}>
-          What are we<br />
-          <span style={s.accent}>building today?</span>
+          What are we&nbsp;<span style={s.accent}>building today?</span>
         </motion.h1>
 
         {/* Prompt card with inline CTAs */}
@@ -463,11 +462,12 @@ const s = {
   },
   headline: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'clamp(32px, 4.2vw, 52px)',
+    fontSize: 'clamp(22px, 3.2vw, 42px)',
     letterSpacing: '-0.04em',
     lineHeight: 1.15, paddingBottom: 4,
     textAlign: 'left',
     color: 'var(--text)',
+    fontWeight: 500,
   },
   accent: { color: 'var(--amber)' },
 
@@ -512,7 +512,7 @@ const s = {
     display: 'inline-flex', alignItems: 'center', gap: 7,
     padding: '9px 16px',
     border: '1px solid',
-    borderRadius: 'var(--r-lg)',
+    borderRadius: 'var(--r-sm)',
     fontFamily: 'var(--font-ui)',
     cursor: 'pointer',
     transition: 'background 0.15s, border-color 0.15s',

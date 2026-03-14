@@ -534,7 +534,7 @@ const s = {
   topBar: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '12px 22px',
-    background: 'var(--bg-panel)',
+    background: 'var(--bg-topbar)',
     borderBottom: '1px solid var(--border)',
     gap: 16, position: 'sticky', top: 0, zIndex: 10,
   },
