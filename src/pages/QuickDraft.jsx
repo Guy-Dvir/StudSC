@@ -1,12 +1,46 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, RefreshCw, Expand, ChevronLeft, X, Zap, ArrowRight } from 'lucide-react'
+import { ArrowLeft, Sparkles, Expand, ChevronLeft, X, Zap, ArrowRight } from 'lucide-react'
 import { streamDrafts, getDraftSession } from '../lib/api.js'
 import ThemeToggle from '../components/ThemeToggle.jsx'
 import { useIsMobile } from '../lib/useIsMobile.js'
 
 const ease = [0.22, 1, 0.36, 1]
+
+const QUICK_DRAFT_SESSION_STORAGE = 'website-planner.quickDraftSessionV1'
+
+function promptStorageKey(p) {
+  if (!p || typeof p !== 'string') return ''
+  return `${p.length}:${p.slice(0, 200)}`
+}
+
+function readStoredQuickDraftSessionId(apiPrompt) {
+  if (typeof sessionStorage === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(QUICK_DRAFT_SESSION_STORAGE)
+    if (!raw) return null
+    const { id, key } = JSON.parse(raw)
+    if (!id || key !== promptStorageKey(apiPrompt)) return null
+    return id
+  } catch {
+    return null
+  }
+}
+
+function writeStoredQuickDraftSessionId(id, apiPrompt) {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.setItem(QUICK_DRAFT_SESSION_STORAGE, JSON.stringify({ id, key: promptStorageKey(apiPrompt) }))
+  } catch (_) {}
+}
+
+function clearStoredQuickDraftSession() {
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.removeItem(QUICK_DRAFT_SESSION_STORAGE)
+  } catch (_) {}
+}
 
 export default function QuickDraft({ theme, onToggleTheme }) {
   const { state }  = useLocation()
@@ -16,7 +50,7 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const [prompt,   setPrompt]   = useState(state?.prompt || '')
   const [genPrompt, setGenPrompt] = useState(state?.generatePrompt || state?.prompt || '')
   const [loading,  setLoading]  = useState(false)
-  const [loadingSlots, setLoadingSlots] = useState([false, false, false])
+  const [loadingSet, setLoadingSet] = useState(new Set())
   const [error,    setError]    = useState('')
   const [expanded, setExpanded] = useState(null)
   const [showCode, setShowCode] = useState(null)
@@ -25,6 +59,17 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   const [slideWidth, setSlideWidth] = useState(0)
   const cleanupRef = useRef(null)
   const carouselRef = useRef(null)
+  const initializedRef = useRef(false)
+  const sessionIdRef = useRef(
+    state?.draftSessionId ??
+      state?.resumeSessionId ??
+      readStoredQuickDraftSessionId(state?.generatePrompt || state?.prompt || '')
+  )
+  const draftsRef = useRef(drafts)
+  draftsRef.current = drafts
+  const [slotTarget, setSlotTarget] = useState(null)
+  const maxLoadingIdx = loadingSet.size > 0 ? Math.max(...loadingSet) + 1 : 0
+  const totalSlots = Math.max(drafts.length, maxLoadingIdx, slotTarget || 0)
 
   const measureCarousel = useCallback((el) => {
     carouselRef.current = el
@@ -52,6 +97,8 @@ export default function QuickDraft({ theme, onToggleTheme }) {
   }, [mobile, drafts.length, loading, slideWidth])
 
   useEffect(() => {
+    if (initializedRef.current) return
+    initializedRef.current = true
     if (state?.resumeSessionId) {
       resumeSession(state.resumeSessionId)
     } else if (!state?.drafts?.length && genPrompt) {
@@ -66,66 +113,136 @@ export default function QuickDraft({ theme, onToggleTheme }) {
     return () => clearTimeout(t)
   }, [mobile, swipeHintDismissed])
 
-  function resumeSession(sessionId) {
-    setLoading(true)
-    const slots = [true, true, true]
-    if (state?.drafts) {
-      state.drafts.forEach((d, i) => { if (d) slots[i] = false })
+  function pendingIndicesForSession(session) {
+    if (session.status !== 'generating') return new Set()
+    const target = session.generatingTarget
+    const arr = session.drafts || []
+    if (target == null) {
+      const pending = new Set()
+      if (arr.length === 0) pending.add(0)
+      else {
+        for (let i = 0; i < arr.length; i++) {
+          if (!arr[i]) pending.add(i)
+        }
+      }
+      return pending
     }
-    setLoadingSlots(slots)
+    const pending = new Set()
+    for (let i = 0; i < target; i++) {
+      if (!arr[i]) pending.add(i)
+    }
+    return pending
+  }
+
+  function resumeSession(sessionId) {
+    sessionIdRef.current = sessionId
+    setLoading(true)
+
+    ;(async () => {
+      try {
+        const session = await getDraftSession(sessionId)
+        setDrafts(session.drafts || [])
+        setPrompt(session.displayName || session.prompt)
+        setGenPrompt(session.prompt)
+        writeStoredQuickDraftSessionId(session.id, session.prompt)
+        if (session.generatingTarget != null) setSlotTarget(session.generatingTarget)
+        else setSlotTarget(null)
+        if (session.status === 'generating') {
+          setLoadingSet(pendingIndicesForSession(session))
+        } else {
+          setLoading(false)
+          setLoadingSet(new Set())
+          setSlotTarget(null)
+        }
+      } catch (_) {
+        setLoading(false)
+        setLoadingSet(new Set())
+        setSlotTarget(null)
+      }
+    })()
 
     const poll = setInterval(async () => {
       try {
         const session = await getDraftSession(sessionId)
         setDrafts(session.drafts || [])
-        const newSlots = [true, true, true]
-        ;(session.drafts || []).forEach((_, i) => { newSlots[i] = false })
-        setLoadingSlots(newSlots)
+        setPrompt(session.displayName || session.prompt)
+        setGenPrompt(session.prompt)
+        writeStoredQuickDraftSessionId(session.id, session.prompt)
+        if (session.generatingTarget != null) setSlotTarget(session.generatingTarget)
         if (session.status !== 'generating') {
           clearInterval(poll)
           setLoading(false)
-          setLoadingSlots([false, false, false])
+          setLoadingSet(new Set())
+          setSlotTarget(null)
+        } else {
+          setLoadingSet(pendingIndicesForSession(session))
         }
       } catch (_) {
         clearInterval(poll)
         setLoading(false)
+        setLoadingSet(new Set())
+        setSlotTarget(null)
       }
     }, 2000)
     cleanupRef.current = () => clearInterval(poll)
   }
 
-  function generate(p) {
+  function generate(p, count = 3) {
     cleanupRef.current?.()
-    setLoading(true); setError('')
-    setDrafts([]); setExpanded(null); setShowCode(null)
-    setLoadingSlots([true, true, true])
+    const startIndex = draftsRef.current.length
+    let sid = sessionIdRef.current
+    if (!sid && startIndex > 0) {
+      sid = readStoredQuickDraftSessionId(p)
+      if (sid) sessionIdRef.current = sid
+    }
+    if (startIndex === 0 && !sid) {
+      clearStoredQuickDraftSession()
+    }
 
-    cleanupRef.current = streamDrafts(p, {
+    const existingStyles = draftsRef.current.map(d => d.style).filter(Boolean)
+    const pendingIndices = new Set(Array.from({ length: count }, (_, i) => startIndex + i))
+
+    setLoading(true); setError('')
+    setExpanded(null); setShowCode(null)
+    setLoadingSet(pendingIndices)
+
+    cleanupRef.current = streamDrafts(p, prompt, {
+      sessionId: sid || undefined,
+      count,
+      startIndex,
+      existingStyles,
+      onSessionCreated({ sessionId, generatingTarget }) {
+        sessionIdRef.current = sessionId
+        writeStoredQuickDraftSessionId(sessionId, p)
+        if (generatingTarget != null) setSlotTarget(generatingTarget)
+      },
       onDraftReady({ index, draft }) {
         setDrafts(prev => {
           const next = [...prev]
           next[index] = draft
           return next
         })
-        setLoadingSlots(prev => {
-          const next = [...prev]
-          next[index] = false
+        setLoadingSet(prev => {
+          const next = new Set(prev)
+          next.delete(index)
           return next
         })
       },
       onDone() {
         setLoading(false)
-        setLoadingSlots([false, false, false])
+        setLoadingSet(new Set())
+        setSlotTarget(null)
       },
       onError({ message }) {
         setError(message || 'Generation failed')
         setLoading(false)
-        setLoadingSlots([false, false, false])
+        setLoadingSet(new Set())
+        setSlotTarget(null)
       },
     })
   }
 
-  function regenerate() { generate(genPrompt) }
+  function generateMore() { generate(genPrompt, 3) }
 
   function download(draft) {
     const blob = new Blob([draft.html], { type: 'text/html' })
@@ -144,20 +261,16 @@ export default function QuickDraft({ theme, onToggleTheme }) {
         {!mobile && (
           <div style={s.promptChip}>
             <span style={s.chipText}>{prompt}</span>
-            <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading} style={{ flexShrink: 0 }}>
-              <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
-                <RefreshCw size={12} />
-              </motion.span>
-              {loading ? 'Regenerating…' : 'Regenerate'}
+            <button className="btn btn-ghost btn-sm" onClick={generateMore} disabled={loading} style={{ flexShrink: 0 }}>
+              <Sparkles size={12} />
+              {loading ? 'Generating…' : 'More Options'}
             </button>
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: mobile ? 'auto' : 0 }}>
           {mobile && (
-            <button className="btn btn-ghost btn-sm" onClick={regenerate} disabled={loading}>
-              <motion.span animate={loading ? { rotate: 360 } : {}} transition={{ duration: 0.7, repeat: loading ? Infinity : 0, ease: 'linear' }}>
-                <RefreshCw size={12} />
-              </motion.span>
+            <button className="btn btn-ghost btn-sm" onClick={generateMore} disabled={loading}>
+              <Sparkles size={12} />
             </button>
           )}
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
@@ -175,12 +288,12 @@ export default function QuickDraft({ theme, onToggleTheme }) {
 
       {/* Grid (desktop) / Carousel (mobile) */}
       <div style={{ ...s.body, ...(mobile ? { padding: '16px 12px', position: 'relative' } : {}) }}>
-        {(drafts.length > 0 || loading) && (
+        {(drafts.length > 0 || loading || (slotTarget != null && slotTarget > 0)) && (
           <div style={{ ...s.gridTitle, ...(mobile ? { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } : {}) }}>
             <span>Homepage Drafts</span>
-            {mobile && (drafts.length > 0 || loading) && (
+            {mobile && totalSlots > 0 && (
               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-3)', fontFamily: 'var(--font-ui)' }}>
-                {currentSlide + 1} / 3
+                {currentSlide + 1} / {totalSlots}
               </span>
             )}
           </div>
@@ -188,7 +301,7 @@ export default function QuickDraft({ theme, onToggleTheme }) {
         {mobile ? (
           <>
             <AnimatePresence>
-              {!swipeHintDismissed && (drafts.length > 0 || loading) && (
+              {!swipeHintDismissed && (drafts.length > 0 || loading || (slotTarget != null && slotTarget > 0)) && (
                 <motion.div
                   key="swipe-hint"
                   initial={{ opacity: 0 }}
@@ -206,10 +319,10 @@ export default function QuickDraft({ theme, onToggleTheme }) {
               <motion.div
                 style={{
                   ...s.carouselTrack,
-                  width: slideWidth > 0 ? slideWidth * 3 : '300%',
+                  width: slideWidth > 0 ? slideWidth * totalSlots : `${totalSlots * 100}%`,
                 }}
                 drag={mobile ? 'x' : false}
-                dragConstraints={slideWidth > 0 ? { left: -2 * slideWidth, right: 0 } : false}
+                dragConstraints={slideWidth > 0 ? { left: -(totalSlots - 1) * slideWidth, right: 0 } : false}
                 dragElastic={0.1}
                 dragMomentum={false}
                 onDragEnd={(_, info) => {
@@ -220,18 +333,18 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                   const velocity = info.velocity.x
                   let next
                   if (Math.abs(velocity) > 300) {
-                    next = velocity > 0 ? Math.max(0, Math.floor(raw) - 1) : Math.min(2, Math.ceil(raw) + 1)
+                    next = velocity > 0 ? Math.max(0, Math.floor(raw) - 1) : Math.min(totalSlots - 1, Math.ceil(raw) + 1)
                   } else {
                     next = Math.round(raw)
                   }
-                  setCurrentSlide(Math.max(0, Math.min(2, next)))
+                  setCurrentSlide(Math.max(0, Math.min(totalSlots - 1, next)))
                 }}
-                animate={{ x: slideWidth > 0 ? -currentSlide * slideWidth : `-${currentSlide * (100 / 3)}%` }}
+                animate={{ x: slideWidth > 0 ? -currentSlide * slideWidth : `-${currentSlide * (100 / totalSlots)}%` }}
                 transition={{ type: 'spring', stiffness: 400, damping: 35 }}
               >
-                {[0, 1, 2].map(i => (
-                  <div key={i} style={{ ...s.carouselSlide, width: slideWidth > 0 ? slideWidth : undefined, flex: slideWidth > 0 ? 'none' : '0 0 33.333%' }}>
-                    {loadingSlots[i] ? (
+                {Array.from({ length: totalSlots }, (_, i) => (
+                  <div key={i} style={{ ...s.carouselSlide, width: slideWidth > 0 ? slideWidth : undefined, flex: slideWidth > 0 ? 'none' : `0 0 ${100 / totalSlots}%` }}>
+                    {loadingSet.has(i) ? (
                       <DraftSkeleton index={i} />
                     ) : drafts[i] ? (
                       <motion.div
@@ -256,10 +369,10 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                 ))}
               </motion.div>
             </div>
-            {(drafts.length > 0 || loading) && (
+            {totalSlots > 0 && (
               <div style={s.carouselDots}>
-                {[0, 1, 2].map(i => {
-                  const accent = ['#5A84A6', '#7EB8A4', '#A09BCC'][i]
+                {Array.from({ length: totalSlots }, (_, i) => {
+                  const accent = SKEL_ACCENTS[i % SKEL_ACCENTS.length]
                   return (
                     <button
                       key={i}
@@ -269,7 +382,7 @@ export default function QuickDraft({ theme, onToggleTheme }) {
                         background: currentSlide === i ? accent : 'var(--border-mid)',
                         width: currentSlide === i ? 20 : 8,
                       }}
-                      aria-label={`Draft ${i + 1} of 3`}
+                      aria-label={`Draft ${i + 1} of ${totalSlots}`}
                     />
                   )
                 })}
@@ -277,10 +390,10 @@ export default function QuickDraft({ theme, onToggleTheme }) {
             )}
           </>
         ) : (
-          <div style={s.grid}>
-            {[0, 1, 2].map(i => (
+          <div style={{ ...s.grid, gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            {Array.from({ length: totalSlots }, (_, i) => (
               <AnimatePresence key={i} mode="wait">
-                {loadingSlots[i] ? (
+                {loadingSet.has(i) ? (
                   <motion.div key={`sk-${i}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                     <DraftSkeleton index={i} />
                   </motion.div>
@@ -311,7 +424,6 @@ export default function QuickDraft({ theme, onToggleTheme }) {
             <ModalShell maxWidth={1140} mobile={mobile}>
               <div style={{ ...s.modalBar, ...(mobile ? { flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '12px 14px' } : {}) }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={s.modalNum}>#{expanded + 1}</span>
                   <strong style={s.modalTitle}>{drafts[expanded]?.style}</strong>
                   {!mobile && <span style={s.modalSub}>{drafts[expanded]?.palette}</span>}
                 </div>
@@ -361,8 +473,8 @@ const STEPS = [
 ]
 
 function DraftSkeleton({ index }) {
-  const accent = SKEL_ACCENTS[index]
-  const steps = STEPS[index]
+  const accent = SKEL_ACCENTS[index % SKEL_ACCENTS.length]
+  const steps = STEPS[index % STEPS.length]
   const [step, setStep] = useState(0)
   const timerRef = useRef(null)
 
@@ -386,7 +498,6 @@ function DraftSkeleton({ index }) {
 
       <div style={s.cardHead}>
         <div style={s.cardMeta}>
-          <span style={{ ...s.cardNum, color: accent }}>0{index + 1}</span>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             <Shimmer width={90} height={11} accent={accent} />
             <Shimmer width={60} height={9} accent={accent} delay={0.1} />
@@ -467,7 +578,6 @@ function DraftCard({ draft, index, onExpand, onGenerateSite, onGoToEditor, mobil
     >
       <div style={{ ...s.cardHead, ...(mobile ? { flexDirection: 'column', alignItems: 'stretch', gap: 10 } : {}) }}>
         <div style={s.cardMeta}>
-          <span style={{ ...s.cardNum, color: ac.color }}>0{index + 1}</span>
           <div style={s.cardStyle}>{draft.style}</div>
         </div>
         {mobile && draft.mood && (
@@ -555,7 +665,7 @@ const s = {
 
   body: { flex: 1, padding: '32px 28px' },
   gridTitle: { fontSize: 11, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'var(--text-3)', fontFamily: 'var(--font-ui)', marginBottom: 16 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 22 },
+  grid: { display: 'grid', gap: 22 },
 
   carouselTrackWrap: { overflow: 'hidden', width: '100%', touchAction: 'pan-y pinch-zoom' },
   carouselTrack: { display: 'flex', cursor: 'grab', width: '300%' },
@@ -582,7 +692,7 @@ const s = {
   cardLine: { height: 2, flexShrink: 0 },
   cardHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '14px 16px 10px', gap: 12 },
   cardMeta: { display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 },
-  cardNum: { fontFamily: 'var(--font-display)', fontSize: 11, fontWeight: 700, letterSpacing: '0.05em', paddingTop: 2, flexShrink: 0 },
+
   cardStyle: { fontSize: 14, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.01em' },
   cardActions: { display: 'flex', gap: 5, flexShrink: 0, alignItems: 'center' },
   cardBtn: { fontSize: 10, padding: '6px 8px', gap: 4, lineHeight: 1 },
@@ -616,7 +726,7 @@ const s = {
     padding: '16px 20px', borderBottom: '1px solid var(--border)',
     gap: 16, flexShrink: 0,
   },
-  modalNum: { fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-display)', fontWeight: 700 },
+
   modalTitle: { fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.02em' },
   modalSub: { fontSize: 12, color: 'var(--text-3)' },
   bigIframe: { width: '100%', flex: 1, border: 'none', background: '#fff' },

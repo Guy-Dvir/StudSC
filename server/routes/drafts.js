@@ -9,10 +9,11 @@ const router = express.Router()
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const DRAFTS_DIR = join(__dirname, '../../artifacts/drafts')
 
-const STYLES = [
-  { direction: 'modern/bold', label: 'first' },
-  { direction: 'clean/minimal', label: 'second' },
-  { direction: 'warm/expressive', label: 'third' },
+const STYLE_DIRECTIONS = [
+  'modern/bold', 'clean/minimal', 'warm/expressive',
+  'retro/vintage', 'luxury/elegant', 'playful/vibrant',
+  'brutalist/raw', 'organic/natural', 'editorial/typographic',
+  'futuristic/tech',
 ]
 
 const SINGLE_DRAFT_PROMPT = (userPrompt, direction, index, previousStyles) => {
@@ -23,7 +24,7 @@ const SINGLE_DRAFT_PROMPT = (userPrompt, direction, index, previousStyles) => {
 
 "${userPrompt}"
 
-Design direction: ${direction} (this is design #${index + 1} of 3)${avoid}
+Design direction: ${direction} (design #${index + 1})${avoid}
 
 Return a JSON object with:
 - "style": a catchy 2-3 word style name (e.g., "Bold Editorial", "Clean Minimalist")
@@ -55,15 +56,50 @@ const DRAFT_SCHEMA = {
 }
 
 // SSE endpoint — streams each draft as it's ready, saves progressively
+// Query params: prompt, displayName, count (default 3), startIndex (default 0), existingStyles (comma-sep), sessionId (append to existing)
 router.get('/generate', async (req, res) => {
   const prompt = req.query.prompt
   if (!prompt) return res.status(400).json({ error: 'Prompt is required' })
 
-  await fs.ensureDir(DRAFTS_DIR)
-  const id = randomUUID()
-  const sessionPath = join(DRAFTS_DIR, `${id}.json`)
+  const count = Math.min(Math.max(parseInt(req.query.count) || 3, 1), 6)
+  const startIndex = Math.max(parseInt(req.query.startIndex) || 0, 0)
+  const existingStyles = req.query.existingStyles
+    ? req.query.existingStyles.split(',').map(s => s.trim()).filter(Boolean)
+    : []
+  const appendId = req.query.sessionId && /^[0-9a-f-]{36}$/i.test(req.query.sessionId) ? req.query.sessionId : null
 
-  const session = { id, prompt, generatedAt: new Date().toISOString(), status: 'generating', drafts: [] }
+  await fs.ensureDir(DRAFTS_DIR)
+
+  const displayName = req.query.displayName || ''
+  let id
+  let sessionPath
+  let session
+
+  const appendPath = appendId ? join(DRAFTS_DIR, `${appendId}.json`) : null
+  if (appendPath && await fs.pathExists(appendPath)) {
+    session = await fs.readJson(appendPath)
+    if (session.prompt !== prompt) {
+      return res.status(400).json({ error: 'Session prompt mismatch' })
+    }
+    id = session.id
+    sessionPath = appendPath
+    session.status = 'generating'
+    session.generatingTarget = startIndex + count
+    if (!Array.isArray(session.drafts)) session.drafts = []
+  } else {
+    id = randomUUID()
+    sessionPath = join(DRAFTS_DIR, `${id}.json`)
+    session = {
+      id,
+      prompt,
+      displayName,
+      generatedAt: new Date().toISOString(),
+      status: 'generating',
+      drafts: [],
+      generatingTarget: startIndex + count,
+    }
+  }
+
   await fs.writeJson(sessionPath, session)
 
   res.setHeader('Content-Type', 'text/event-stream')
@@ -73,15 +109,19 @@ router.get('/generate', async (req, res) => {
 
   const send = (event, data) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
 
-  send('session_created', { sessionId: id })
+  send('session_created', { sessionId: id, generatingTarget: session.generatingTarget })
 
-  const previousStyles = []
+  let drafts = Array.isArray(session.drafts) ? [...session.drafts] : []
+  const previousStyles = [...existingStyles]
 
   try {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
 
-    for (let i = 0; i < STYLES.length; i++) {
-      send('draft_start', { index: i })
+    for (let i = 0; i < count; i++) {
+      const globalIndex = startIndex + i
+      const dirIndex = globalIndex % STYLE_DIRECTIONS.length
+      while (drafts.length <= globalIndex) drafts.push(null)
+      send('draft_start', { index: globalIndex })
 
       const model = genAI.getGenerativeModel({
         model: 'gemini-3-flash-preview',
@@ -92,21 +132,25 @@ router.get('/generate', async (req, res) => {
       })
 
       const result = await model.generateContent(
-        SINGLE_DRAFT_PROMPT(prompt, STYLES[i].direction, i, previousStyles)
+        SINGLE_DRAFT_PROMPT(prompt, STYLE_DIRECTIONS[dirIndex], globalIndex, previousStyles)
       )
       const draft = JSON.parse(result.response.text())
-      session.drafts.push(draft)
+      drafts[globalIndex] = draft
       previousStyles.push(draft.style)
+      session.drafts = drafts
       await fs.writeJson(sessionPath, session)
-      send('draft_ready', { index: i, draft })
+      send('draft_ready', { index: globalIndex, draft })
     }
 
     session.status = 'complete'
+    delete session.generatingTarget
+    session.drafts = drafts.filter(d => d != null)
     await fs.writeJson(sessionPath, session)
     send('done', { sessionId: id })
   } catch (err) {
     console.error('Draft generation error:', err)
     session.status = 'error'
+    delete session.generatingTarget
     await fs.writeJson(sessionPath, session).catch(() => {})
     send('error', { message: err.message || 'Generation failed' })
   }
@@ -122,11 +166,16 @@ router.get('/history', async (req, res) => {
   for (const file of files) {
     if (!file.endsWith('.json')) continue
     try {
-      const { id, prompt, generatedAt, status, drafts } = await fs.readJson(join(DRAFTS_DIR, file))
+      const { id, prompt, displayName, generatedAt, status, drafts, generatingTarget } = await fs.readJson(join(DRAFTS_DIR, file))
       sessions.push({
-        id, prompt, generatedAt,
+        id, prompt, displayName: displayName || '', generatedAt,
         status: status || 'complete',
-        drafts: (drafts || []).map(({ html: _html, ...meta }) => meta),
+        generatingTarget: generatingTarget ?? null,
+        drafts: (drafts || []).map(d => {
+          if (!d || typeof d !== 'object') return null
+          const { html: _html, ...meta } = d
+          return meta
+        }),
       })
     } catch (_) {}
   }
@@ -135,11 +184,11 @@ router.get('/history', async (req, res) => {
 
 // Save a draft session
 router.post('/history', async (req, res) => {
-  const { prompt, drafts } = req.body
+  const { prompt, drafts, displayName } = req.body
   if (!prompt || !Array.isArray(drafts)) return res.status(400).json({ error: 'Invalid payload' })
   await fs.ensureDir(DRAFTS_DIR)
   const id = randomUUID()
-  const session = { id, prompt, generatedAt: new Date().toISOString(), drafts }
+  const session = { id, prompt, displayName: displayName || '', generatedAt: new Date().toISOString(), drafts }
   await fs.writeJson(join(DRAFTS_DIR, `${id}.json`), session)
   res.json({ id })
 })

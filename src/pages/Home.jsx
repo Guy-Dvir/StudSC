@@ -293,12 +293,12 @@ export default function Home({ theme, onToggleTheme }) {
                         try {
                           const session = await getDraftSession(item.data.id)
                           if (item.data.status === 'generating') {
-                            navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts, resumeSessionId: session.id } })
+                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id, resumeSessionId: session.id } })
                           } else {
-                            navigate('/quick-draft', { state: { prompt: session.prompt, drafts: session.drafts } })
+                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id } })
                           }
                         } catch (_) {
-                          navigate('/quick-draft', { state: { prompt: item.data.prompt } })
+                          navigate('/quick-draft', { state: { prompt: item.data.displayName || item.data.prompt, generatePrompt: item.data.prompt } })
                         }
                       }} />
                     : <RecentPlanRow  key={item.key} plan={item.data}  onClick={() => navigate(`/plan/${item.data.id}`)} />
@@ -374,9 +374,26 @@ function RecentDraftRow({ draft, onClick }) {
           />
         : <Zap size={10} color="var(--amber)" strokeWidth={2} style={{ flexShrink: 0, opacity: 0.7 }} />
       }
-      <span style={s.recentName}>{draft.prompt || 'Untitled draft'}</span>
+      <span style={s.recentName}>{draft.displayName || draft.prompt || 'Untitled draft'}</span>
       {isGenerating
-        ? <span style={{ ...s.recentTime, color: 'var(--amber)' }}>{draft.drafts?.length || 0}/3 generating…</span>
+        ? (() => {
+            const done = (draft.drafts || []).filter(Boolean).length
+            const total = draft.generatingTarget
+            const multiQueue = total != null && total > 1
+            let label
+            if (multiQueue) {
+              label = `${done}/${total} generating…`
+            } else if (done === 0) {
+              label = 'Generating…'
+            } else if (total != null) {
+              label = `${done}/${total} generating…`
+            } else {
+              label = `${done} generating…`
+            }
+            return (
+              <span style={{ ...s.recentTime, color: 'var(--amber)' }}>{label}</span>
+            )
+          })()
         : <span style={s.recentTime}>{relativeTime(draft.generatedAt)}</span>
       }
       <ArrowRight size={12} color="var(--text-3)" strokeWidth={1.8}

@@ -1,7 +1,15 @@
 const BASE = '/api'
 
-export function streamDrafts(prompt, { onSessionCreated, onDraftStart, onDraftReady, onDone, onError }) {
-  const url = `${BASE}/drafts/generate?prompt=${encodeURIComponent(prompt)}`
+export function streamDrafts(prompt, displayName, { count = 3, startIndex = 0, existingStyles = [], sessionId, onSessionCreated, onDraftStart, onDraftReady, onDone, onError }) {
+  // sessionId and small params first — very long `prompt` URLs can hit length limits that drop trailing params
+  const params = new URLSearchParams()
+  if (sessionId) params.set('sessionId', sessionId)
+  params.set('count', String(count))
+  params.set('startIndex', String(startIndex))
+  params.set('displayName', displayName || '')
+  if (existingStyles.length) params.set('existingStyles', existingStyles.join(','))
+  params.set('prompt', prompt)
+  const url = `${BASE}/drafts/generate?${params}`
   const source = new EventSource(url)
 
   source.addEventListener('session_created', (e) => {
@@ -84,11 +92,11 @@ export async function listDraftSessions() {
   return res.json()
 }
 
-export async function saveDraftSession(prompt, drafts) {
+export async function saveDraftSession(prompt, drafts, displayName) {
   const res = await fetch(`${BASE}/drafts/history`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, drafts }),
+    body: JSON.stringify({ prompt, drafts, displayName: displayName || '' }),
   })
   if (!res.ok) throw new Error('Failed to save draft session')
   return res.json()
