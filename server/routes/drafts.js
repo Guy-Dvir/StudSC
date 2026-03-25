@@ -55,6 +55,69 @@ const DRAFT_SCHEMA = {
   required: ['style', 'palette', 'mood', 'html'],
 }
 
+/** Matches the plan → quick-draft handoff in PlanMode.jsx */
+const PLAN_DRAFT_PROMPT_PREFIX = 'Based on this comprehensive website plan:'
+
+function stripMdInline(s) {
+  return s
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim()
+}
+
+/**
+ * When displayName never reached the server (long URLs, older clients), derive a short list title
+ * from the synthetic plan prompt instead of showing the full markdown blob.
+ */
+function titleFromPlanDraftPrompt(prompt) {
+  if (typeof prompt !== 'string') return ''
+  const text = prompt.replace(/\r\n/g, '\n')
+  if (!text.trimStart().startsWith(PLAN_DRAFT_PROMPT_PREFIX)) return ''
+  let rest = text.slice(text.indexOf(PLAN_DRAFT_PROMPT_PREFIX) + PLAN_DRAFT_PROMPT_PREFIX.length).trimStart()
+  const lines = rest.split('\n')
+  let i = 0
+  while (i < lines.length && !lines[i].trim()) i++
+  if (i >= lines.length) return 'Website plan'
+  // First ## block: use first substantive body line, else the section heading
+  if (/^##\s+/.test(lines[i].trim())) {
+    const sectionHeading = stripMdInline(lines[i].trim()).replace(/^##\s+/, '')
+    i++
+    while (i < lines.length && !lines[i].trim()) i++
+    if (i < lines.length) {
+      const raw = lines[i].trim()
+      if (!/^##\s/.test(raw)) {
+        const body = stripMdInline(raw).replace(/^[-*]\s+/, '')
+        if (body.length >= 8) {
+          return body.length > 72 ? `${body.slice(0, 69).trimEnd()}…` : body
+        }
+      }
+    }
+    return sectionHeading ? `Plan · ${sectionHeading}` : 'Website plan'
+  }
+  const snippet = stripMdInline(lines[i]).slice(0, 72)
+  return snippet || 'Website plan'
+}
+
+function resolveSessionDisplayName(storedDisplayName, prompt) {
+  const s = typeof storedDisplayName === 'string' ? storedDisplayName.trim() : ''
+  if (s) return s
+  return titleFromPlanDraftPrompt(prompt) || ''
+}
+
+function sessionJsonForClient(raw) {
+  const { id, prompt, displayName, generatedAt, status, drafts, generatingTarget } = raw
+  return {
+    id,
+    prompt,
+    displayName: resolveSessionDisplayName(displayName, prompt),
+    generatedAt,
+    status: status || 'complete',
+    generatingTarget: generatingTarget ?? null,
+    drafts,
+  }
+}
+
 // SSE endpoint — streams each draft as it's ready, saves progressively
 // Query params: prompt, displayName, count (default 3), startIndex (default 0), existingStyles (comma-sep), sessionId (append to existing)
 router.get('/generate', async (req, res) => {
@@ -70,7 +133,9 @@ router.get('/generate', async (req, res) => {
 
   await fs.ensureDir(DRAFTS_DIR)
 
-  const displayName = req.query.displayName || ''
+  const queryDisplay =
+    typeof req.query.displayName === 'string' ? req.query.displayName.trim() : ''
+  const displayName = queryDisplay || titleFromPlanDraftPrompt(prompt) || ''
   let id
   let sessionPath
   let session
@@ -86,6 +151,9 @@ router.get('/generate', async (req, res) => {
     session.status = 'generating'
     session.generatingTarget = startIndex + count
     if (!Array.isArray(session.drafts)) session.drafts = []
+    if (!(typeof session.displayName === 'string' && session.displayName.trim())) {
+      session.displayName = displayName
+    }
   } else {
     id = randomUUID()
     sessionPath = join(DRAFTS_DIR, `${id}.json`)
@@ -166,17 +234,13 @@ router.get('/history', async (req, res) => {
   for (const file of files) {
     if (!file.endsWith('.json')) continue
     try {
-      const { id, prompt, displayName, generatedAt, status, drafts, generatingTarget } = await fs.readJson(join(DRAFTS_DIR, file))
-      sessions.push({
-        id, prompt, displayName: displayName || '', generatedAt,
-        status: status || 'complete',
-        generatingTarget: generatingTarget ?? null,
-        drafts: (drafts || []).map(d => {
-          if (!d || typeof d !== 'object') return null
-          const { html: _html, ...meta } = d
-          return meta
-        }),
+      const row = await fs.readJson(join(DRAFTS_DIR, file))
+      const slimDrafts = (row.drafts || []).map(d => {
+        if (!d || typeof d !== 'object') return null
+        const { html: _html, ...meta } = d
+        return meta
       })
+      sessions.push(sessionJsonForClient({ ...row, drafts: slimDrafts }))
     } catch (_) {}
   }
   res.json(sessions.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt)))
@@ -188,7 +252,9 @@ router.post('/history', async (req, res) => {
   if (!prompt || !Array.isArray(drafts)) return res.status(400).json({ error: 'Invalid payload' })
   await fs.ensureDir(DRAFTS_DIR)
   const id = randomUUID()
-  const session = { id, prompt, displayName: displayName || '', generatedAt: new Date().toISOString(), drafts }
+  const resolved =
+    (typeof displayName === 'string' && displayName.trim()) || titleFromPlanDraftPrompt(prompt) || ''
+  const session = { id, prompt, displayName: resolved, generatedAt: new Date().toISOString(), drafts }
   await fs.writeJson(join(DRAFTS_DIR, `${id}.json`), session)
   res.json({ id })
 })
@@ -197,7 +263,11 @@ router.post('/history', async (req, res) => {
 router.get('/history/:id', async (req, res) => {
   const file = join(DRAFTS_DIR, `${req.params.id}.json`)
   if (!await fs.pathExists(file)) return res.status(404).json({ error: 'Not found' })
-  res.json(await fs.readJson(file))
+  const raw = await fs.readJson(file)
+  res.json({
+    ...raw,
+    displayName: resolveSessionDisplayName(raw.displayName, raw.prompt),
+  })
 })
 
 export default router

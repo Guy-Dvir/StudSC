@@ -522,7 +522,10 @@ export default function PlanMode({ theme, onToggleTheme }) {
       .map(s => `## ${s.display}\n${plan.sections[s.id]}`)
       .join('\n\n')
     const prompt = `Based on this comprehensive website plan:\n\n${planContext}\n\nGenerate 3 homepage designs that faithfully reflect the brand, goals, and aesthetic direction described above.`
-    navigate('/quick-draft', { state: { prompt: plan.name, generatePrompt: prompt, fromPlan: true } })
+    const planTitle = (plan.name || '').trim() || 'Website plan'
+    navigate('/quick-draft', {
+      state: { prompt: planTitle, displayName: planTitle, generatePrompt: prompt, fromPlan: true },
+    })
   }
 
   function downloadFile(filename, content) {

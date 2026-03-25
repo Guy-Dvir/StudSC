@@ -110,7 +110,8 @@ export default function Home({ theme, onToggleTheme }) {
 
   function handleDraft() {
     if (!prompt.trim()) return
-    navigate('/quick-draft', { state: { prompt: prompt.trim() } })
+    const t = prompt.trim()
+    navigate('/quick-draft', { state: { prompt: t, displayName: t } })
   }
 
   async function handlePlan() {
@@ -298,12 +299,12 @@ export default function Home({ theme, onToggleTheme }) {
                         try {
                           const session = await getDraftSession(item.data.id)
                           if (item.data.status === 'generating') {
-                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id, resumeSessionId: session.id } })
+                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, displayName: session.displayName, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id, resumeSessionId: session.id } })
                           } else {
-                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id } })
+                            navigate('/quick-draft', { state: { prompt: session.displayName || session.prompt, displayName: session.displayName, generatePrompt: session.prompt, drafts: session.drafts, draftSessionId: session.id } })
                           }
                         } catch (_) {
-                          navigate('/quick-draft', { state: { prompt: item.data.displayName || item.data.prompt, generatePrompt: item.data.prompt } })
+                          navigate('/quick-draft', { state: { prompt: item.data.displayName || item.data.prompt, displayName: item.data.displayName, generatePrompt: item.data.prompt } })
                         }
                       }} />
                     : <RecentPlanRow  key={item.key} plan={item.data}  onClick={() => navigate(`/plan/${item.data.id}`)} />
