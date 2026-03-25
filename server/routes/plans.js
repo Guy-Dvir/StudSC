@@ -43,6 +43,7 @@ Rules:
 - Start by asking about the business if you don't know it yet
 - Gradually cover all sections over the conversation — don't rush
 - When you update **brand-theme**, always include concrete typography numbers (px/rem, line-height, letter-spacing where relevant) and explicit UI specs developers can implement (spacing scale, corner radius, button states, inputs, cards, nav, focus rings) — not vague phrases like "clean" or "modern" alone
+- CRITICAL font format: each font role MUST be a top-level bullet: \`- **<Role>:** *<Font Name>* — <weights>\`. Bold label, then font name in *single asterisks*. Colors use hex like #1A1A1A. This exact markup is required for the UI to render font previews and color swatches.
 
 CRITICAL: Always respond with ONLY valid JSON, no markdown, no explanation:
 {
@@ -86,9 +87,11 @@ Write ONLY the markdown content — no JSON, no preamble, no section title. Use 
 Required coverage (be specific — use numbers, hex codes, and px/rem):
 
 - **Typography (fonts & metrics)**
-  - Exact **Google Font** family names for headings, body, and any accent/detail font (e.g. quotes, labels). List weights used for each role.
-  - Full **font stack** fallbacks after each family (e.g. \`Montserrat, system-ui, sans-serif\`).
-  - **Body:** base size (e.g. 16px or 1rem), **line-height** (e.g. 1.6), and default text color (hex).
+  - List each font role as a TOP-LEVEL bullet using this structure:
+    \`- **<Role>:** *<Google Font Name>* — <weights>. Stack: <fallbacks>\`
+    Example roles: Headings, Body, Accents, Display, Caption, etc.
+    The role label must be **bold**, the Google Font name must be wrapped in *single asterisks* (italic). Choose fonts that fit the project — do NOT default to Montserrat/Inter/Open Sans unless they genuinely suit the brand.
+  - Include full fallback font stacks after each family.
   - **Heading hierarchy:** H1–H4 each with **font-size**, **font-weight**, **line-height**, **letter-spacing** (e.g. -0.02em, 0.05em), and **text-transform** if any.
   - **Small / caption / navigation link** text: size and weight if they differ from body.
 

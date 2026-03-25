@@ -129,11 +129,12 @@ function MarkdownView({ content }) {
       elements.push(<h2 key={i} style={s.mdH2}>{inlineMd(line.slice(3))}</h2>)
     } else if (line.startsWith('# ')) {
       elements.push(<h1 key={i} style={s.mdH1}>{inlineMd(line.slice(2))}</h1>)
-    } else if (line.startsWith('- ') || line.startsWith('* ')) {
+    } else if (/^\s*[-*]\s/.test(line)) {
+      const raw = line.replace(/^\s*[-*]\s+/, '')
       elements.push(
         <p key={i} style={{ paddingLeft: 16, position: 'relative', marginBottom: 3, fontSize: 13, lineHeight: 1.75, color: 'var(--text-2)' }}>
           <span style={{ position: 'absolute', left: 4, opacity: 0.45 }}>·</span>
-          {inlineMd(line.slice(2))}
+          {inlineMd(raw)}
         </p>
       )
     } else if (line.trim() === '') {
@@ -148,18 +149,43 @@ function MarkdownView({ content }) {
 }
 
 /* ── Visual enrichment helpers ──────────────────────────── */
+const FONT_ROLE_RE = /\b(headings?|display|title|hero|body|text|paragraph|copy|accents?|caption|nav|quote|sub.?head|label|detail|mono|code|ui|serif|sans|primary\s*font|secondary\s*font|decorative|brand)\b/i
+
 function parseFonts(md) {
   const results = [], seen = new Set()
-  // handles **Label:** *FontName* — negative lookahead excludes color names like "Midnight Onyx (#hex)"
-  const re = /\*\*([^*]+?)\*\*:?\s*(?:\*([A-Za-z][A-Za-z\s]+?)\*|([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+))(?=\s|,|–|-|$)(?!\s*\(#)/gm
-  let m
-  while ((m = re.exec(md)) !== null) {
-    const label = m[1].trim().replace(/:$/, '')
-    const fontName = (m[2] || m[3] || '').trim()
-    // skip if label is too long (not a font role name) or fontName looks like a color/place
-    if (label.length > 25) continue
-    if (fontName.length >= 3 && !seen.has(fontName)) {
-      seen.add(fontName); results.push({ label, fontName })
+
+  for (const line of (md || '').split('\n')) {
+    if (/#[0-9A-Fa-f]{6}/.test(line)) continue
+
+    // Pattern 1 (primary): **Label:** *Font Name* — works for any label
+    const m1 = line.match(/\*\*([^*]{1,30})\*\*:?\s+\*([A-Za-z][A-Za-z\s]{1,30}?)\*/)
+    if (m1) {
+      const label = m1[1].trim().replace(/:$/, '')
+      const fontName = m1[2].trim()
+      if (fontName.length >= 2 && !seen.has(fontName)) {
+        seen.add(fontName); results.push({ label, fontName }); continue
+      }
+    }
+
+    // Pattern 2: **Label:** Multi Word Name (no italics) — label must be a font role
+    // Allows mixed-case fragments like "DM Sans", "IBM Plex Mono", "EB Garamond"
+    const m2 = line.match(/\*\*([^*]{1,30})\*\*:?\s+([A-Z][A-Za-z]*(?:\s+[A-Za-z][A-Za-z]*)+)/)
+    if (m2 && FONT_ROLE_RE.test(m2[1])) {
+      const label = m2[1].trim().replace(/:$/, '')
+      const fontName = m2[2].trim()
+      if (fontName.length >= 3 && !seen.has(fontName)) {
+        seen.add(fontName); results.push({ label, fontName }); continue
+      }
+    }
+
+    // Pattern 3: **Label:** SingleWord (e.g. Inter, Lato, Jost) — label must be a font role
+    const m3 = line.match(/\*\*([^*]{1,30})\*\*:?\s+([A-Z][a-z]{1,20})(?=[\s,;.()\-–—:]|$)/)
+    if (m3 && FONT_ROLE_RE.test(m3[1])) {
+      const label = m3[1].trim().replace(/:$/, '')
+      const fontName = m3[2].trim()
+      if (fontName.length >= 3 && !seen.has(fontName)) {
+        seen.add(fontName); results.push({ label, fontName }); continue
+      }
     }
   }
   return results
@@ -1289,8 +1315,8 @@ function WysiwygEditor({ value, onChange, placeholder, readOnly, sectionId }) {
       if (line.startsWith('### ')) { if (inList) { out.push('</ul>'); inList = false }; out.push(`<h3>${inlineToHtml(line.slice(4))}</h3>`) }
       else if (line.startsWith('## ')) { if (inList) { out.push('</ul>'); inList = false }; out.push(`<h2>${inlineToHtml(line.slice(3))}</h2>`) }
       else if (line.startsWith('# '))  { if (inList) { out.push('</ul>'); inList = false }; out.push(`<h1>${inlineToHtml(line.slice(2))}</h1>`) }
-      else if (line.startsWith('- ') || line.startsWith('* ')) {
-        const raw = line.slice(2)
+      else if (/^\s*[-*]\s/.test(line)) {
+        const raw = line.replace(/^\s*[-*]\s+/, '')
         const icon = sectionId === 'content-inventory' ? contentTypeIcon(raw) : null
         const iconHtml = icon ? `<span class="content-type-icon" contenteditable="false" aria-hidden="true">${icon} </span>` : ''
         if (!inList) { out.push('<ul>'); inList = true }
