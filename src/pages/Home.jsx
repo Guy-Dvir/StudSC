@@ -274,10 +274,15 @@ export default function Home({ theme, onToggleTheme }) {
 
         {/* Recent activity */}
         {(recentPlans.length > 0 || draftHistory.length > 0) && (() => {
+          const activityTime = item => {
+            const raw = item.type === 'draft' ? item.data.generatedAt : item.data.createdAt
+            const t = raw ? new Date(raw).getTime() : 0
+            return Number.isNaN(t) ? 0 : t
+          }
           const allItems = [
             ...draftHistory.map(d => ({ type: 'draft', data: d, key: d.id })),
             ...recentPlans.map(p => ({ type: 'plan', data: p, key: p.id })),
-          ]
+          ].sort((a, b) => activityTime(b) - activityTime(a))
           const LIMIT = 5
           const visible = showAllDrafts ? allItems : allItems.slice(0, LIMIT)
           const hasMore = allItems.length > LIMIT
